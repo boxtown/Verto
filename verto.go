@@ -15,11 +15,8 @@ package verto
 import (
 	"fmt"
 	"github.com/boxtown/verto/mux"
-	"io"
 	"net"
 	"net/http"
-	"net/url"
-	"strconv"
 )
 
 // -------------------------------------------
@@ -56,54 +53,6 @@ type ResponseFunc func(response interface{}, c *Context)
 
 func (rf ResponseFunc) Handle(response interface{}, c *Context) {
 	rf(response, c)
-}
-
-// ----------------------------------------
-// ---------- Custom Param Struct ---------
-
-// Custom wrapper struct around url.Values to help ease
-// retrieval by type other than strings
-type QueryParams struct {
-	url.Values
-}
-
-// Returns a bool representation of the value identified by key.
-// An error is returned if there was a problem converting the value
-// to a bool.
-func (qp QueryParams) GetBool(key string) (bool, error) {
-	val := qp.Values.Get(key)
-	return strconv.ParseBool(val)
-}
-
-// Returns a float64 representation of the value identified by key.
-// An error is returned if there was a problem converting the value
-// to a float64.
-func (qp QueryParams) GetFloat64(key string) (float64, error) {
-	val := qp.Values.Get(key)
-	return strconv.ParseFloat(val, 64)
-}
-
-// Returns an int64 representation of the value identified by key.
-// An error is returned if there was a problem converting the value
-// to an int64.
-func (qp QueryParams) GetInt64(key string) (int64, error) {
-	val := qp.Values.Get(key)
-	return strconv.ParseInt(val, 10, 64)
-}
-
-// -------------------------------
-// ---------- Context ------------
-
-// Context struct for Verto resource handlers
-type Context struct {
-	Response http.ResponseWriter
-	Request  *http.Request
-
-	Params     QueryParams
-	Headers    http.Header
-	Body       io.ReadCloser
-	Injections map[string]interface{}
-	Logger     Logger
 }
 
 // -----------------------------------
@@ -150,9 +99,6 @@ func (mw *MuxWrapper) UseVerto(v *Verto, plugin VertoPlugin) *MuxWrapper {
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Params:     QueryParams{r.URL.Query()},
-			Headers:    r.Header,
-			Body:       r.Body,
 			Injections: v.injections,
 			Logger:     v.logger,
 		}
@@ -219,9 +165,6 @@ func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Params:     QueryParams{r.URL.Query()},
-			Headers:    r.Header,
-			Body:       r.Body,
 			Injections: v.injections,
 			Logger:     v.logger,
 		}
@@ -244,9 +187,6 @@ func (v *Verto) Register(
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Params:     QueryParams{r.URL.Query()},
-			Headers:    r.Header,
-			Body:       r.Body,
 			Injections: v.injections,
 			Logger:     v.logger,
 		}
