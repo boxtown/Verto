@@ -133,46 +133,61 @@ Middleware can also be chained per route
   
 Context is the custom parameter used for Verto's `ResourceFunc`s.  
 It contains the original `http.ResponseWriter` and `*http.Request`  
-as well as parsed out params, headers, and body. Parsed out params  
-are stored in a custom [QueryParam](#queryparam) class. 
+as well as a reference to a [logger](#logging) and [injections](#injections).  
+Context also provides a set of utility functions for dealing with parameter  
+setting and retrieval.  
   
     type Context struct {
       // The original ResponseWriter and Request
       Request  *http.Request
       Response http.ResponseWriter
       
-      // Parsed out query parameters
-      Params QueryParams
-      
-      // Parsed out headers
-      Headers http.Header
-      
-      // Parsed out request body
-      Body io.ReadCloser
+      // Logger
+      Logger Logger
       
       // Injections
       Injections map[string]interface{}
     }
-  
-### QueryParam  
-  
-QueryParam is a wrapper around url.Values that allows for easier  
-retrieval of non-string types. QueryParam defines 3 helper functions:  
-  
-    // GetBool retrieves the value stored at key and attempts
-    // to convert the value to a bool and return it. If there
-    // is an error converting, GetBool will return the error.
-    // If the value does not exist, the zero value for bool
-    // is returned.
-    GetBool(key string) (bool, error)
     
-    // GetInt64 works just like GetBool but returns an
-    // int64 on success instead. 
-    GetInt64(key string) (int64, error)
+    // Retrieves the first string value associated with the key. Throws an
+    // error if the context was not properly initialized. If calling this function
+    // on a Verto prepared context, an error will not be thrown. This goes for all
+    // of the following functions
+    func (c *Context) Get(key string) (string, error)
     
-    // GetFloat64 works just like GetBool but returns a
-    // float64 on success instead.
-    GetFloat64(key string) (float64, error)
+    // Performs exactly like Get() but returns all values associated with the key.
+    func (c *Context) GetMulti(key string) ([]string, error)
+    
+    // Performs exactly like Get() but converts the value to a bool if possible.
+    // Throws an error if the conversion fails or if the context was not properly
+    // intialized.
+    func (c *Context) GetBool(key string) (bool, error)
+    
+    // Does the same thing as GetBool() but converts to a float64 instead.
+    func (c *Context) GetFloat64(key string) (float64, error)
+    
+    // Does the same thing as GetBool() but converts to an int64 instead.
+    func (c *Context) GetInt64(key string) (int64, error)
+    
+    // Sets the value associated with key. Throws an error if context was not
+    // properly initialized. 
+    func (c *Context) Set(key, value string) error
+    
+    // Associated multiple values with the key. Throws an error if context
+    // was not properly initialized.
+    func (c *Context) SetMulti(key string, values []string) error
+    
+    // Associates a boolean value with the key. Throws an error if context
+    // was not properly initialized or if there was a problem formatting value.
+    func (c *Context) SetBool(key string, value bool) error
+    
+    // Associates a float64 value with the key. Throws an error if context
+    // was not properly initialized or if there was a problem formatting value.
+    func (c *Context) SetFloat64(key string, value float64) error
+    
+    // Associates a int64 value with the key. Throws an error if context
+    // was not properly initialized or if there was a problem formatting value.
+    func (c *Context) SetInt64(key string, value int64) error
   
 ### Response Handler  
   
