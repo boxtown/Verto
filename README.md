@@ -54,10 +54,10 @@ normal `http.Handler`.
   ```Go
     // Basic routing example
     endpoint1 := verto.ResourceFunc(c *verto.Context) (interface{}, error) {
-      fmt.Fprintf(c.Response, "Hello, World!)
+      fmt.Fprintf(c.Response, "Hello, World!")
     })
     endpoint2 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-      fmt.Fprintf(w, "Hello, World!)
+      fmt.Fprintf(w, "Hello, World!")
     })
     
     v.Register("GET", "/path/to/1", endpoint1)
