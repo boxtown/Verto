@@ -14,7 +14,7 @@ logging, and middleware chaining.
   - [Logging](#logging)
   
 ### Basic Usage  
-  
+  ```Go
     // Initialize Verto
     v := verto.New()
     
@@ -25,12 +25,15 @@ logging, and middleware chaining.
     
     // Run Verto
     v.Run()
+  ```
   
 ### Resource Function
   
 Verto accepts a custom ResourceFunction:  
   
+  ```Go
     type ResourceFunc(c *Context) (interface{}, error) func
+  ```
   
 The function takes in a Verto [Context](#context) struct. The Context contains  
 a `map` of [injections](#injections) that we will discuss later. The resource function  
@@ -48,6 +51,7 @@ methods. The parameters are the method to be matched, the path to be matched, an
 handler. `Register` takes a `verto.ResourceFunc` as an endpoint and `RegisterHandler` takes a  
 normal `http.Handler`. 
   
+  ```Go
     // Basic routing example
     endpoint1 := verto.ResourceFunc(c *verto.Context) (interface{}, error) {
       fmt.Fprintf(c.Response, "Hello, World!)
@@ -60,11 +64,13 @@ normal `http.Handler`.
     v.Register("POST", "/path/to/1", endpoint1)
     
     v.RegisterHandler("PUT", "/path/to/2", endpoint2)
+  ```
   
 Verto also the option to include named parameters in the path. Named parameters can also
 be more strictly defined using regular expressions. Named parameters will be injected into  
 `r.URL.Query()` and, if the endpoint is a `ResourceFunc`, into `c.Params` as well.  
   
+  ```Go
     // Named routing example
     endpoint1 := verto.ResourceFunc(c *verto.Context) (interface{}, error) {
       fmt.Fprintf(c.Response, c.Params.Get("param"))
@@ -80,7 +86,7 @@ be more strictly defined using regular expressions. Named parameters will be inj
     // Apply a regex check to the param by use of : followed by
     // the regex.
     v.RegisterHandler("PUT", "/path/to/{param: ^[0-9]+$}", endpoint2)
-  
+  ```
   
 ### Middleware Chaining  
   
@@ -92,6 +98,7 @@ Middleware must come in one of 3 forms:
   
 If the middleware comes in the form of an `http.Handler`, next is automatically called.  
   
+ ```Go
     // Example middleware usage
     v := verto.New()
 
@@ -120,14 +127,17 @@ If the middleware comes in the form of an `http.Handler`, next is automatically 
     })
     
     v.Run()
+  ```
     
 Middleware can also be chained per route  
   
+  ```Go
     // Register route and chain middle ware. These middleware
     // will only be run for GET requests on /.
     v.Register("GET", "/", func(c *verto.Context) (interface{}, error) {
       ...
     }).UseHandler(mw1).Use(mw2).UseVerto(mw3)
+  ```
   
 ### Context  
   
@@ -137,6 +147,7 @@ as well as a reference to a [logger](#logging) and [injections](#injections).
 Context also provides a set of utility functions for dealing with parameter  
 setting and retrieval.  
   
+  ```Go
     type Context struct {
       // The original ResponseWriter and Request
       Request  *http.Request
@@ -188,15 +199,18 @@ setting and retrieval.
     // Associates a int64 value with the key. Throws an error if context
     // was not properly initialized or if there was a problem formatting value.
     func (c *Context) SetInt64(key string, value int64) error
+  ```
   
 ### Response Handler  
   
 Verto allows the user to define his own response handling function.  
 The handler must be of the form:  
   
+  ```Go
     type ResponseHandler interface {
       Handle(response interface{}, c *Context)
     }
+  ```
   
 Verto also defines a `ResponseFunc` to wrap functions so that  
 they implement `ResponseHandler`. A default handler is provided  
@@ -204,6 +218,7 @@ and used if no custom handler is provided. It is recommended that
 the user brings his own handler as the default just attempts to  
 write response as is.  
   
+  ```Go
     // Custom response handler example
     handler := verto.ResponseFunc(func(response interface{}, c *verto.Context) {
       // Attempt to marshal response as JSON before writing it
@@ -212,32 +227,38 @@ write response as is.
     })
     
     v.RegisterResponseHandler(handler)
+  ```
   
 ### Error Handler  
   
 Like response handling, Verto allows the user to define his own
 error handler. The handler must be of the form:  
   
+  ```Go
     type ErrorHandler interface {
       Handle(err error, c *Context)
     }
+  ```
   
 Verto also defines an `ErrorFunc` to wrap functions so that they implement  
 `ErrorHandler`. A default handler is provided but it is recommended that  
 the user brings his own handler. The default just responds with a `500 Internal Server Error`.  
   
+  ```Go
     // Custom error handler example
     handler := verto.ErrorFunc(func(err error, c *Context) {
       fmt.Fprintf(c.Response, "Custom error response!")
     })
     
     v.RegisterErrorHandler(handler)
+  ```
   
 ### Injections  
   
 Injections are anything from the outside world you need passed to an endpoint  
 handler. 
   
+  ```Go
     // Injection example
     
     // Inject using the Inject() function. The first parameter
@@ -252,6 +273,7 @@ handler.
     }{}
     v.Inject("slice", sl)
     v.Inject("struct", st)
+  ```
   
 Injections are useful for things intricate loggers, analytics,  
 and caching.  
@@ -262,6 +284,7 @@ Verto supports the use of logging but does not provide a default
 option. A custom logger can be registered as long as it follows  
 the form:  
   
+  ```Go
     type Logger interface {
      // Log logs message msg to the default location
      // and returns true on a successful log.
@@ -270,9 +293,11 @@ the form:
      // LogTo logs message msg to the location identified
      // by name. Returns true on a successful log.
      LogTo(name, msg string) bool
+  ```
    
 Example:  
   
+  ```Go
     type LogWrapper struct {
       log.Logger
     }
@@ -293,3 +318,4 @@ Example:
     v.RegisterLogger(&LogWrapper{l})
     // flag must be set to log
     v.SetLogging(true)
+  ```
