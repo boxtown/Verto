@@ -201,6 +201,10 @@ setting and retrieval.
     // was not properly initialized or if there was a problem formatting value.
     func (c *Context) SetInt64(key string, value int64) error { }
   ```
+
+**Note:** If you happen to be in the business of setting a large number of parameters,  
+consider injecting a custom struct instead of using `Set()` or `SetMulti()`. While the `Set`  
+functions are not super inefficient, they do use `url.Values.Encode()` and `url.Values.Decode()` 
   
 ### Response Handler  
   
