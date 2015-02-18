@@ -68,7 +68,8 @@ normal `http.Handler`.
   
 Verto also the option to include named parameters in the path. Named parameters can also
 be more strictly defined using regular expressions. Named parameters will be injected into  
-`r.URL.Query()` and, if the endpoint is a `ResourceFunc`, into `c.Params` as well.  
+`r.URL.Query()` and, if the endpoint is a `ResourceFunc`, will be retrievable through the  
+[Context](#context) utility functions.  
   
   ```Go
     // Named routing example
