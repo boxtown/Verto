@@ -164,41 +164,41 @@ setting and retrieval.
     // error if the context was not properly initialized. If calling this function
     // on a Verto prepared context, an error will not be thrown. This goes for all
     // of the following functions
-    func (c *Context) Get(key string) (string, error)
+    func (c *Context) Get(key string) (string, error) { }
     
     // Performs exactly like Get() but returns all values associated with the key.
-    func (c *Context) GetMulti(key string) ([]string, error)
+    func (c *Context) GetMulti(key string) ([]string, error) { }
     
     // Performs exactly like Get() but converts the value to a bool if possible.
     // Throws an error if the conversion fails or if the context was not properly
     // intialized.
-    func (c *Context) GetBool(key string) (bool, error)
+    func (c *Context) GetBool(key string) (bool, error) { }
     
     // Does the same thing as GetBool() but converts to a float64 instead.
-    func (c *Context) GetFloat64(key string) (float64, error)
+    func (c *Context) GetFloat64(key string) (float64, error) { }
     
     // Does the same thing as GetBool() but converts to an int64 instead.
-    func (c *Context) GetInt64(key string) (int64, error)
+    func (c *Context) GetInt64(key string) (int64, error) { }
     
     // Sets the value associated with key. Throws an error if context was not
     // properly initialized. 
-    func (c *Context) Set(key, value string) error
+    func (c *Context) Set(key, value string) error { }
     
     // Associated multiple values with the key. Throws an error if context
     // was not properly initialized.
-    func (c *Context) SetMulti(key string, values []string) error
+    func (c *Context) SetMulti(key string, values []string) error { }
     
     // Associates a boolean value with the key. Throws an error if context
     // was not properly initialized or if there was a problem formatting value.
-    func (c *Context) SetBool(key string, value bool) error
+    func (c *Context) SetBool(key string, value bool) error { }
     
     // Associates a float64 value with the key. Throws an error if context
     // was not properly initialized or if there was a problem formatting value.
-    func (c *Context) SetFloat64(key string, value float64) error
+    func (c *Context) SetFloat64(key string, value float64) error { }
     
     // Associates a int64 value with the key. Throws an error if context
     // was not properly initialized or if there was a problem formatting value.
-    func (c *Context) SetInt64(key string, value int64) error
+    func (c *Context) SetInt64(key string, value int64) error { }
   ```
   
 ### Response Handler  
@@ -293,6 +293,7 @@ the form:
      // LogTo logs message msg to the location identified
      // by name. Returns true on a successful log.
      LogTo(name, msg string) bool
+    }
   ```
    
 Example:  
