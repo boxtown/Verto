@@ -160,6 +160,7 @@ func (v *Verto) UseHandler(handler http.Handler) *Verto {
 	return v
 }
 
+// Wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
 func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := &Context{
@@ -230,6 +231,11 @@ func (v *Verto) RegisterErrorHandler(errorHandler ErrorHandler) {
 // If no handler is registered, DefaultResponseHandler is used.
 func (v *Verto) RegisterResponseHandler(responseHandler ResponseHandler) {
 	v.responseHandler = responseHandler
+}
+
+// Sets whether to do strict path matching or not.
+func (v *Verto) SetStrict(strict bool) {
+	v.muxer.Strict = strict
 }
 
 func (v *Verto) RunOn(addr string) {

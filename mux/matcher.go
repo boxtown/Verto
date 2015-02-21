@@ -152,9 +152,13 @@ func (m *DefaultMatcher) Add(method, path string, object interface{}) {
 	}
 
 	path_split := strings.Split(path, "/")
-	if len(path_split[0]) == 0 {
+
+	// Need this because splitting an empty string
+	// returns a len 1 slice for some reason
+	if len(path_split) > 0 && len(path_split[0]) == 0 {
 		path_split = path_split[1:]
 	}
+
 	m.root.add(method, path_split, object)
 }
 
@@ -164,8 +168,12 @@ func (m *DefaultMatcher) Match(method, path string) (interface{}, url.Values, er
 	}
 
 	path_split := strings.Split(path, "/")
-	if len(path_split[0]) == 0 {
+
+	// Need this because splitting an empty string
+	// returns a len 1 slice for some reason
+	if len(path_split) > 0 && len(path_split[0]) == 0 {
 		path_split = path_split[1:]
 	}
+
 	return m.root.match(method, path_split)
 }

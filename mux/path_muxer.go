@@ -5,6 +5,7 @@ package mux
 // wildcards and regex routes.
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -51,7 +52,13 @@ func (p *plugins) use(handler PluginHandler) {
 
 	plugin := &plugin{
 		handler: handler,
-		next:    &plugin{},
+		next: &plugin{
+			handler: PluginFunc(func(
+				w http.ResponseWriter,
+				r *http.Request,
+				next http.HandlerFunc) {
+			}),
+		},
 	}
 
 	if p.head == nil {
@@ -168,11 +175,21 @@ func (node *MuxNode) UseHandler(handler http.Handler) Node {
 // ---------------------------------
 // ---------- Path Muxer -----------
 
-// A path-handler multiplexer.
+// PathMuxer matches string paths and methods to endpoint handlers.
+// Paths can contain named parameters which can be restricted by regexes.
+// PathMuxer also allows the use of global and per-route plugins.
 type PathMuxer struct {
 	chain     *plugins
 	chainLock *sync.RWMutex
 	matcher   Matcher
+
+	NotFoundHandler       http.Handler
+	NotImplementedHandler http.Handler
+
+	// If strict, Paths with trailing slashes are considered
+	// a different path than those without trailing slashes.
+	// E.g. '/a/b/' != '/a/b'.
+	Strict bool
 }
 
 // Returns a pointer to a new, empty PathMuxer.
@@ -181,35 +198,45 @@ func New() *PathMuxer {
 		chain:     &plugins{},
 		chainLock: &sync.RWMutex{},
 		matcher:   &DefaultMatcher{},
+
+		NotFoundHandler:       NotFoundHandler,
+		NotImplementedHandler: NotImplementedHandler,
+
+		Strict: true,
 	}
 
-	muxer.chain.use(PluginFunc(
-		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-			node, params, err := muxer.find(r.Method, r.URL.Path)
-			if err != nil {
-				if err == ErrNotFound {
-					NotFoundHandler{}.ServeHTTP(w, r)
-				} else {
-					NotImplementedHandler{}.ServeHTTP(w, r)
-				}
-				return
-			}
-
-			if len(params) > 0 {
-				r.URL.RawQuery = r.URL.RawQuery + "&" + params.Encode()
-			}
-
-			node.chainLock.RLock()
-			defer node.chainLock.RUnlock()
-
-			if node.chain == nil || node.chain.length == 0 {
-				node.handler.ServeHTTP(w, r)
-			} else {
-				node.chain.run(w, r)
-			}
-		}))
+	muxer.chain.use(PluginFunc(muxer.endpoint))
 
 	return &muxer
+}
+
+func (mux *PathMuxer) endpoint(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	node, params, err := muxer.find(r.Method, r.URL.path)
+	if err != nil {
+		if err == ErrNotFound {
+			mux.NotFoundHandler.ServeHTTP(w, r)
+		} else {
+			mux.NotImplementedHandler.ServeHTTP(w, r)
+		}
+		return
+	}
+
+	if len(params) > 0 {
+		var buf bytes.Buffer
+		buf.WriteString(r.URL.RawQuery)
+		buf.WriteString("&")
+		buf.WriteString(params.Encode)
+		r.URL.RawQuery = buf.String()
+	}
+
+	node.chainLock.RLock()
+	defer node.chainLock.RUnlock()
+
+	if node.chain == nil || node.chain.length == 0 {
+		node.handler.ServeHTTP(w, r)
+	} else {
+		node.chain.run(w, r)
+	}
 }
 
 // Add a plugin handler onto the end of the chain of global
@@ -285,6 +312,7 @@ func (mux *PathMuxer) find(method, path string) (*MuxNode, url.Values, error) {
 // ServeHTTP dispatches the correct handler for the route.
 func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p := cleanPath(r.URL.Path); p != r.URL.Path {
+
 		url := *r.URL
 		url.Path = p
 		p = url.String()
