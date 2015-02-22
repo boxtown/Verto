@@ -183,8 +183,8 @@ type PathMuxer struct {
 	chainLock *sync.RWMutex
 	matcher   Matcher
 
-	NotFoundHandler       http.Handler
-	NotImplementedHandler http.Handler
+	NotFound       http.Handler
+	NotImplemented http.Handler
 
 	// If strict, Paths with trailing slashes are considered
 	// a different path than those without trailing slashes.
@@ -199,8 +199,8 @@ func New() *PathMuxer {
 		chainLock: &sync.RWMutex{},
 		matcher:   &DefaultMatcher{},
 
-		NotFoundHandler:       NotFoundHandler,
-		NotImplementedHandler: NotImplementedHandler,
+		NotFound:       NotFoundHandler{},
+		NotImplemented: NotImplementedHandler{},
 
 		Strict: true,
 	}
@@ -211,22 +211,30 @@ func New() *PathMuxer {
 }
 
 func (mux *PathMuxer) endpoint(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-	node, params, err := muxer.find(r.Method, r.URL.path)
-	if err != nil {
-		if err == ErrNotFound {
-			mux.NotFoundHandler.ServeHTTP(w, r)
-		} else {
-			mux.NotImplementedHandler.ServeHTTP(w, r)
-		}
+	node, params, err := mux.find(r.Method, r.URL.Path)
+	if err == ErrNotImplemented {
+		mux.NotImplemented.ServeHTTP(w, r)
 		return
+	} else if err == ErrNotFound {
+		if mux.Strict {
+			mux.NotFound.ServeHTTP(w, r)
+			return
+		}
+
+		r.URL.Path = handleTrailingSlash(r.URL.Path)
+
+		node, params, err = mux.find(r.Method, r.URL.Path)
+		if err == ErrNotImplemented {
+			mux.NotImplemented.ServeHTTP(w, r)
+			return
+		} else if err == ErrNotFound {
+			mux.NotFound.ServeHTTP(w, r)
+			return
+		}
 	}
 
 	if len(params) > 0 {
-		var buf bytes.Buffer
-		buf.WriteString(r.URL.RawQuery)
-		buf.WriteString("&")
-		buf.WriteString(params.Encode)
-		r.URL.RawQuery = buf.String()
+		r.URL.RawQuery = appendParams(r.URL.RawQuery, params.Encode())
 	}
 
 	node.chainLock.RLock()
@@ -359,4 +367,27 @@ func cleanPath(p string) string {
 		np += "/"
 	}
 	return np
+}
+
+func handleTrailingSlash(p string) string {
+	if p == "" {
+		return "/"
+	}
+
+	if p[len(p)-1] == '/' {
+		b := []byte(p)
+		b = b[:len(b)-1]
+		return string(b)
+	}
+
+	p += "/"
+	return p
+}
+
+func appendParams(query string, params string) string {
+	var buf bytes.Buffer
+	buf.WriteString(query)
+	buf.WriteString("&")
+	buf.WriteString(params)
+	return buf.String()
 }

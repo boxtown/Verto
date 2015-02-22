@@ -257,7 +257,7 @@ func (v *Verto) RunOn(addr string) {
 			if ip == "127.0.0.1" || ip == "::1" {
 				sl.Stop()
 			} else {
-				mux.NotFoundHandler{}.ServeHTTP(w, r)
+				v.muxer.NotFound.ServeHTTP(w, r)
 			}
 		})
 
