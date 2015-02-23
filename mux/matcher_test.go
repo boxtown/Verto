@@ -374,10 +374,24 @@ func TestDefaultMatcherMatch(t *testing.T) {
 		t.Errorf(err)
 	}
 
+	// Test match trailing slash
+	err = "Failed match trailing slash."
+	m.Add("GET", "match", "E")
+	_, _, e = m.Match("GET", "match/")
+	if e != ErrRedirectSlash {
+		t.Errorf(err)
+	}
+
+	m.Add("GET", "match2/", "F")
+	_, _, e = m.Match("GET", "match2")
+	if e != ErrRedirectSlash {
+		t.Errorf(err)
+	}
+
 	// Test match wildcard
 	var params url.Values
 	err = "Failed match wildcard."
-	m.Add("GET", "{wc}", "D")
+	m.Add("GET", "{wc}", "G")
 	obj, params, e = m.Match("GET", "test")
 	if e != nil {
 		t.Errorf(e.Error())
@@ -389,13 +403,13 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	}
 	if v, ok := obj.(string); !ok {
 		t.Errorf(err)
-	} else if v != "D" {
+	} else if v != "G" {
 		t.Errorf(err)
 	}
 
 	// Test match wildcard with regex
 	err = "Failed match wildcard with regex."
-	m.Add("GET", "{wc: ^[0-9]+$}", "E")
+	m.Add("GET", "{wc: ^[0-9]+$}", "H")
 	_, _, e = m.Match("GET", "test")
 	if e != ErrNotFound {
 		t.Errorf(err)
@@ -411,7 +425,7 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	}
 	if v, ok := obj.(string); !ok {
 		t.Errorf(err)
-	} else if v != "E" {
+	} else if v != "H" {
 		t.Errorf(err)
 	}
 }
