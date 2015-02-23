@@ -185,6 +185,7 @@ type PathMuxer struct {
 
 	NotFound       http.Handler
 	NotImplemented http.Handler
+	Redirect       http.Handler
 
 	// If strict, Paths with trailing slashes are considered
 	// a different path than those without trailing slashes.
@@ -201,6 +202,7 @@ func New() *PathMuxer {
 
 		NotFound:       NotFoundHandler{},
 		NotImplemented: NotImplementedHandler{},
+		Redirect:       RedirectHandler{},
 
 		Strict: true,
 	}
@@ -216,21 +218,11 @@ func (mux *PathMuxer) endpoint(w http.ResponseWriter, r *http.Request, next http
 		mux.NotImplemented.ServeHTTP(w, r)
 		return
 	} else if err == ErrNotFound {
-		if mux.Strict {
-			mux.NotFound.ServeHTTP(w, r)
-			return
-		}
-
-		r.URL.Path = handleTrailingSlash(r.URL.Path)
-
-		node, params, err = mux.find(r.Method, r.URL.Path)
-		if err == ErrNotImplemented {
-			mux.NotImplemented.ServeHTTP(w, r)
-			return
-		} else if err == ErrNotFound {
-			mux.NotFound.ServeHTTP(w, r)
-			return
-		}
+		mux.NotFound.ServeHTTP(w, r)
+		return
+	} else if err == ErrRedirectSlash && !mux.Strict {
+		mux.Redirect.ServeHTTP(w, r)
+		return
 	}
 
 	if len(params) > 0 {
@@ -323,10 +315,8 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		url := *r.URL
 		url.Path = p
-		p = url.String()
 
-		w.Header().Set("Location", p)
-		w.WriteHeader(http.StatusMovedPermanently)
+		mux.Redirect.ServeHTTP(w, r)
 		return
 	}
 
@@ -351,6 +341,13 @@ type NotImplementedHandler struct{}
 func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(501)
 	fmt.Fprintf(w, "Not Implemented.")
+}
+
+type RedirectHandler struct{}
+
+func (handler RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Location", r.URL.String())
+	w.WriteHeader(http.StatusMovedPermanently)
 }
 
 func cleanPath(p string) string {

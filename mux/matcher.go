@@ -13,6 +13,7 @@ import (
 
 var ErrNotFound = errors.New("mux: Handler not found.")
 var ErrNotImplemented = errors.New("mux: Handler not implemented.")
+var ErrRedirectSlash = errors.New("mux: Redirect trailing slash")
 
 // -----------------------------
 // ---------- Matcher ----------
@@ -30,6 +31,7 @@ type Matcher interface {
 
 type matcherNode struct {
 	data     map[string]interface{}
+	parent   *matcherNode
 	children map[string]*matcherNode
 
 	wildcard string
@@ -46,99 +48,110 @@ func newMatcherNode() *matcherNode {
 // Add an object to a nodes data map by recursively traversing the path
 // and node tree.
 func (n *matcherNode) add(method string, path []string, object interface{}) {
-	if len(path) == 0 {
-		// End of path, attach object to method for node.
 
-		n.data[method] = object
-		return
-	}
+	node := n
+	child := node
+	exists := false
 
-	part := path[0]
-	if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
-		// Path segment is wildcard, handle wildcard case
+	for i := 0; i < len(path); i++ {
+		segment := path[i]
+		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+			// Path segment is wildcard
 
-		child, exists := n.children[wcStr]
-		if !exists {
-			child = newMatcherNode()
-			n.children[wcStr] = child
-		}
+			child, exists = node.children[wcStr]
+			if !exists {
+				child = newMatcherNode()
+				child.parent = node
+				node.children[wcStr] = child
+			}
 
-		expression := strings.TrimPrefix(strings.TrimSuffix(part, "}"), "{")
-		expression = strings.TrimSpace(expression)
+			expression := strings.TrimPrefix(strings.TrimSuffix(segment, "}"), "{")
+			expression = strings.TrimSpace(expression)
 
-		if strings.Contains(expression, ":") {
-			// Path segment contains regexp, compile regexp matcher for future matching
+			if strings.Contains(expression, ":") {
+				// Path segment contains regexp
 
-			exp_split := strings.Split(expression, ":")
-			expression = strings.TrimSpace(exp_split[0])
-			regex := strings.TrimSpace(exp_split[1])
+				exp_split := strings.Split(expression, ":")
+				expression = strings.TrimSpace(exp_split[0])
+				regex := strings.TrimSpace(exp_split[1])
 
-			var err error
-			child.regex, err = regexp.Compile(regex)
-			if err != nil {
-				panic("Could not compile: " + err.Error())
+				var err error
+				child.regex, err = regexp.Compile(regex)
+				if err != nil {
+					panic("Could not compile: " + err.Error())
+				}
+			}
+			child.wildcard = expression
+		} else {
+			// Regular case
+
+			child, exists = node.children[segment]
+			if !exists {
+				child = newMatcherNode()
+				child.parent = node
+				node.children[segment] = child
 			}
 		}
 
-		child.wildcard = expression
-		child.add(method, path[1:], object)
-
-	} else {
-		// Regular case, recursively add object to method
-
-		child, exists := n.children[part]
-		if !exists {
-			child = newMatcherNode()
-			n.children[part] = child
-		}
-		child.add(method, path[1:], object)
+		node = child
 	}
+
+	node.data[method] = object
 }
 
 // Attempt to match a method and path to an object by recursively traversing
 // the path and node tree.
 func (n *matcherNode) match(method string, path []string) (interface{}, url.Values, error) {
-	if len(path) == 0 {
-		// End of path, attempt to find object attached to method and return it.
 
-		data, ok := n.data[method]
-		if !ok {
-			return nil, nil, ErrNotImplemented
-		}
+	node := n
+	child := node
+	exists := false
+	params := url.Values{}
 
-		return data, url.Values{}, nil
-	}
-
-	part := path[0]
-	child, exists := n.children[part]
-	if !exists {
-		// Path segment not found, check for wildcard.
-
-		child, exists := n.children[wcStr]
+	for i := 0; i < len(path); i++ {
+		segment := path[i]
+		child, exists = node.children[segment]
 		if !exists {
-			// No wildcard
+			// Path segment not found, check for wildcard or trailing slash
 
-			return nil, nil, ErrNotFound
+			if i > 0 && i == len(path)-1 && segment == "" {
+				// Handle trailing slash
+
+				if _, exists := node.parent.children[path[i-1]].data[method]; exists {
+					return nil, nil, ErrRedirectSlash
+				}
+				return nil, nil, ErrNotFound
+			}
+
+			child, exists = node.children[wcStr]
+			if !exists {
+				// No wildcard
+
+				return nil, nil, ErrNotFound
+			}
+			if child.regex != nil && !child.regex.MatchString(segment) {
+				// Regex but segment doesn't match.
+
+				return nil, nil, ErrNotFound
+			}
+
+			params.Add(child.wildcard, segment)
 		}
-		if child.regex != nil && !child.regex.MatchString(part) {
-			// Regexp exists but segment does not match.
 
-			return nil, nil, ErrNotFound
-		}
-
-		data, values, err := child.match(method, path[1:])
-		if err != nil {
-			return nil, nil, err
-		}
-
-		values.Set(child.wildcard, part)
-
-		return data, values, nil
-	} else {
-		// Regular case, continue recursively traversing tree
-
-		return child.match(method, path[1:])
+		node = child
 	}
+
+	data, ok := node.data[method]
+	if !ok {
+		if child, exists := node.children[""]; exists {
+			if _, exists = child.data[method]; exists {
+				return nil, nil, ErrRedirectSlash
+			}
+		}
+
+		return nil, nil, ErrNotImplemented
+	}
+	return data, params, nil
 }
 
 // Default Matcher implementation.

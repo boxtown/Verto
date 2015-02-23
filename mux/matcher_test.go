@@ -218,12 +218,12 @@ func TestNodeMatch(t *testing.T) {
 }
 
 func TestDefaultMatcherAdd(t *testing.T) {
-	defer func() {
+	/* defer func() {
 		err := recover()
 		if err != nil {
 			t.Errorf(err.(error).Error())
 		}
-	}()
+	}() */
 
 	m := &DefaultMatcher{}
 
