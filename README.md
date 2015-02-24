@@ -1,6 +1,6 @@
 # Verto
 
-[![Build Status](https://travis-ci.org/boxtown/verto.svg?branch=master)](https://travis-ci.org/boxtown/verto)
+[![Build Status](https://travis-ci.org/boxtown/verto.svg?branch=master)](https://travis-ci.org/boxtown/verto) [![GoDoc](https://godoc.org/github.com/boxtown/verto?status.svg)](https://godoc.org/github.com/boxtown/verto)
   
 Verto is a simple REST framework that provides routing, error handling, response handling,  
 logging, and middleware chaining.  
