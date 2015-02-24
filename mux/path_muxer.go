@@ -16,7 +16,8 @@ import (
 // -----------------------------
 // ---------- Plugins ----------
 
-// An interface for Plugins
+// An interface for Plugins. If the plugin ran successfully, call next
+// to continue the chain of plugins.
 type PluginHandler interface {
 	Handle(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 }
@@ -24,6 +25,7 @@ type PluginHandler interface {
 // PluginFunc is a function that implements the PluginHandler interface.
 type PluginFunc func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 
+// Calls PluginFunc.
 func (p PluginFunc) Handle(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	p(w, r, next)
 }
@@ -113,17 +115,22 @@ func (p *plugins) run(w http.ResponseWriter, r *http.Request) {
 // -------------------------------------
 // ---------- Path Tree Nodes ----------
 
+// An interface for endpoint nodes that
+// allows for the addition of per-route plugin
+// handlers to the node.
 type Node interface {
 	Use(handler PluginHandler) Node
 	UseHandler(hander http.Handler) Node
 }
 
+// The PathMuxer implementation of Node.
 type MuxNode struct {
 	chain     *plugins
 	chainLock *sync.RWMutex
 	handler   http.Handler
 }
 
+// Returns a pointer to a newly initialized MuxNode.
 func NewMuxNode() *MuxNode {
 	return &MuxNode{
 		chain:     &plugins{},
@@ -193,7 +200,7 @@ type PathMuxer struct {
 	Strict bool
 }
 
-// Returns a pointer to a new, empty PathMuxer.
+// Returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
 		chain:     &plugins{},
@@ -221,6 +228,7 @@ func (mux *PathMuxer) endpoint(w http.ResponseWriter, r *http.Request, next http
 		mux.NotFound.ServeHTTP(w, r)
 		return
 	} else if err == ErrRedirectSlash && !mux.Strict {
+		r.URL.Path = handleTrailingSlash(r.URL.Path)
 		mux.Redirect.ServeHTTP(w, r)
 		return
 	}
@@ -297,7 +305,8 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 // Finds and returns the handler associated with the method+path
 // plus any wildcard query parameters. Returns ErrNotFound if the
 // path doesn't exist or ErrNotImplemented if there is no handler
-// for that method+path.
+// for that method+path. Returns ErrRedirectSlash if a handler with (without)
+// a trailing slash exists.
 func (mux *PathMuxer) find(method, path string) (*MuxNode, url.Values, error) {
 	path = cleanPath(path)
 
@@ -329,20 +338,27 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // -----------------------------
 // ---------- Helpers ----------
 
+// Default http.Handler for Not Found responses. Returns a 404 status
+// with message "Not Found."
 type NotFoundHandler struct{}
 
 func (handler NotFoundHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(404)
 	fmt.Fprintf(w, "Not Found.")
+	w.WriteHeader(http.StatusNotFound)
 }
 
+// Default http.Handler for Not Implemented responses. Returns a 501 status
+// with message "Not Implemented."
 type NotImplementedHandler struct{}
 
 func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(501)
 	fmt.Fprintf(w, "Not Implemented.")
+	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Default http.Handler for Redirect responses. Returns a 301 status and redirects
+// to the URL stored in r. This handler assumes the necessary adjustments to r.URL
+// have been made prior to calling the handler.
 type RedirectHandler struct{}
 
 func (handler RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

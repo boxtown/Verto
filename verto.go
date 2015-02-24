@@ -22,7 +22,7 @@ import (
 // -------------------------------------------
 // -------- Interfaces/Definitions -----------
 
-// Interface for logging
+// Interface for loggers
 type Logger interface {
 	// Log a message to the default logger. Returns true if successful.
 	Log(msg string) bool
@@ -31,26 +31,34 @@ type Logger interface {
 	LogTo(name, msg string) bool
 }
 
-// Interface for error handling
+// Interface for error handlers
 type ErrorHandler interface {
+
+	// Handle the error. Context is guaranteed to be
+	// populated if ErrorHandler is registed through Verto.
 	Handle(err error, c *Context)
 }
 
 // Function wrapper that implements ErrorHandler
 type ErrorFunc func(err error, c *Context)
 
+// Calls ErrorFunc.
 func (erf ErrorFunc) Handle(err error, c *Context) {
 	erf(err, c)
 }
 
-// Interface for response handling
+// Interface for response handlers
 type ResponseHandler interface {
+
+	// Handle the response.Context is guaranteed to be
+	// populated if ResponseHandler is registered through Verto.
 	Handle(response interface{}, c *Context)
 }
 
 // Function wrapper that implements ResponseHandler
 type ResponseFunc func(response interface{}, c *Context)
 
+// Calls ResponseFunc.
 func (rf ResponseFunc) Handle(response interface{}, c *Context) {
 	rf(response, c)
 }
@@ -67,6 +75,7 @@ type VertoPlugin interface {
 // VertoPluginFunc wraps functions as Verto Plugins
 type VertoPluginFunc func(c *Context, next http.HandlerFunc)
 
+// Calls VertoPluginFunc.
 func (vpf VertoPluginFunc) Handle(c *Context, next http.HandlerFunc) {
 	vpf(c, next)
 }
@@ -238,6 +247,9 @@ func (v *Verto) SetStrict(strict bool) {
 	v.muxer.Strict = strict
 }
 
+// Run Verto on the specified address (e.g. ":8080").
+// RunOn by defaults adds a shutdown endpoint for Verto
+// at /shutdown which can only be called locally.
 func (v *Verto) RunOn(addr string) {
 	if v.doLogging {
 		v.logger.Log("Server initializing...")
@@ -271,6 +283,7 @@ func (v *Verto) RunOn(addr string) {
 	}
 }
 
+// Runs Verto on address ":8080".
 func (v *Verto) Run() {
 	v.RunOn(":8080")
 }
@@ -309,6 +322,8 @@ func DefaultResponseHandlerFunc(response interface{}, c *Context) {
 	fmt.Fprint(c.Response, response)
 }
 
+// Retrieves the ip address of the requester. Recognizes
+// the "x-forwarded-for" header.
 func GetIp(r *http.Request) string {
 	if ip := r.Header.Get("x-forwarded-for"); len(ip) > 0 {
 		return ip
