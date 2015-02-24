@@ -1,4 +1,3 @@
-// StoppableListener
 package verto
 
 import (

@@ -1,4 +1,3 @@
-// context
 package verto
 
 import (
