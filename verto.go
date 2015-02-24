@@ -118,7 +118,7 @@ func (mw *MuxWrapper) UseVerto(v *Verto, plugin VertoPlugin) *MuxWrapper {
 	return &MuxWrapper{mw.Node.Use(mux.PluginFunc(pluginFunc))}
 }
 
-// function for Verto resource handlers
+// Function definition for Verto resource handlers
 type ResourceFunc func(c *Context) (interface{}, error)
 
 // ----------------------------
@@ -134,8 +134,7 @@ type Verto struct {
 	doLogging       bool
 }
 
-// Returns a pointer to an initialized ResourceManager.
-// You only need one resource manager per web application.
+// Returns a pointer to a newly initialized Verto instance.
 func New() *Verto {
 	v := Verto{
 		muxer:      mux.New(),
