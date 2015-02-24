@@ -153,36 +153,6 @@ func (v *Verto) Inject(tag string, injection interface{}) *Verto {
 	return v
 }
 
-// Use a global plugin. Plugins are called in order of definition.
-// This function is just a wrapper for the muxer's global plugin chain.
-func (v *Verto) Use(handler mux.PluginHandler) *Verto {
-	v.muxer.Use(handler)
-	return v
-}
-
-// Wraps an http Handler as a PluginHandler and calls Verto.Use().
-func (v *Verto) UseHandler(handler http.Handler) *Verto {
-	v.muxer.UseHandler(handler)
-	return v
-}
-
-// Wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
-func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
-	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := &Context{
-			Response:   w,
-			Request:    r,
-			Injections: v.injections,
-			Logger:     v.logger,
-		}
-
-		plugin.Handle(c, next)
-	}
-	v.Use(mux.PluginFunc(pluginFunc))
-
-	return v
-}
-
 // Register a specific method+path combination to
 // a resource function. Any function registered using
 // Register() can be assured the Context will not be null
@@ -239,9 +209,44 @@ func (v *Verto) RegisterResponseHandler(responseHandler ResponseHandler) {
 	v.responseHandler = responseHandler
 }
 
+// Sets whether Verto logs or not.
+func (v *Verto) SetLogging(log bool) {
+	v.doLogging = log
+}
+
 // Sets whether to do strict path matching or not.
 func (v *Verto) SetStrict(strict bool) {
 	v.muxer.Strict = strict
+}
+
+// Use a global plugin. Plugins are called in order of definition.
+// This function is just a wrapper for the muxer's global plugin chain.
+func (v *Verto) Use(handler mux.PluginHandler) *Verto {
+	v.muxer.Use(handler)
+	return v
+}
+
+// Wraps an http Handler as a PluginHandler and calls Verto.Use().
+func (v *Verto) UseHandler(handler http.Handler) *Verto {
+	v.muxer.UseHandler(handler)
+	return v
+}
+
+// Wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
+func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
+	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		c := &Context{
+			Response:   w,
+			Request:    r,
+			Injections: v.injections,
+			Logger:     v.logger,
+		}
+
+		plugin.Handle(c, next)
+	}
+	v.Use(mux.PluginFunc(pluginFunc))
+
+	return v
 }
 
 // Run Verto on the specified address (e.g. ":8080").
@@ -283,11 +288,6 @@ func (v *Verto) RunOn(addr string) {
 // Runs Verto on address ":8080".
 func (v *Verto) Run() {
 	v.RunOn(":8080")
-}
-
-// Sets whether Verto logs or not.
-func (v *Verto) SetLogging(log bool) {
-	v.doLogging = log
 }
 
 // -------------------------------
