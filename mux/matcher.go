@@ -1,4 +1,3 @@
-// Matcher
 package mux
 
 import (

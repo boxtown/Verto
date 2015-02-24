@@ -1,4 +1,6 @@
-// PathMuxer
+// Package mux provides a path multiplexer and
+// interfaces for plugin handling and custom
+// path matching.
 package mux
 
 // A custom multiplexer that can handle

@@ -1,6 +1,3 @@
-// Verto
-package verto
-
 // Verto is a simple REST framework. It is
 // plug n' play and includes it's own path
 // multiplexer, error handler, and response
@@ -11,6 +8,7 @@ package verto
 // Verto multiplexer is currently not
 // replaceable but that may change in the
 // future.
+package verto
 
 import (
 	"fmt"
