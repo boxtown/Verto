@@ -17,7 +17,8 @@ type Logger interface {
 	Printf(format string, v ...interface{}) error
 
 	AddSubscriber(key string) <-chan string
-	AddFile(path string) error
+	AddFile(f *os.File) error
+	AddFilePath(path string) error
 
 	Close() error
 }
@@ -45,10 +46,19 @@ func (vl *VertoLogger) AddSubscriber(key string) <-chan string {
 	return vl.subscribers[key]
 }
 
+func (vl *VertoLogger) AddFile(f *os.File) error {
+	if f == nil {
+		return errors.New("logger.AddFile: bad file as argument")
+	}
+
+	vl.files = append(vl.files, f)
+	return nil
+}
+
 // AddFile attempts to open the file at path as append-only
 // and will begin writing messages to the file or return an error
 // if an error occured opening up the file.
-func (vl *VertoLogger) AddFile(path string) error {
+func (vl *VertoLogger) AddFilePath(path string) error {
 	f, err := os.OpenFile(path, os.O_APPEND, os.ModeAppend)
 	if err != nil {
 		return err
