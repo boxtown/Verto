@@ -6,10 +6,12 @@ import (
 	"time"
 )
 
-// StoppedError gets returned by stoppable listener when a stop
+// ErrStopped gets returned by stoppable listener when a stop
 // signal is sent to the listener.
-var StoppedError = errors.New("listener stopped")
+var ErrStopped = errors.New("listener stopped")
 
+// StoppableListener is a TCPListener with the ability
+// to do a clean stop.
 type StoppableListener struct {
 	*net.TCPListener
 	stop chan int
@@ -40,7 +42,7 @@ func (sl *StoppableListener) Accept() (net.Conn, error) {
 
 		select {
 		case <-sl.stop:
-			return nil, StoppedError
+			return nil, ErrStopped
 		default:
 		}
 

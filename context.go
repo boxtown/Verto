@@ -7,10 +7,10 @@ import (
 	"strconv"
 )
 
-// ContextNotInitializedErr is thrown by Context Get/Set utility functions
+// ErrContextNotInitialized is thrown by Context Get/Set utility functions
 // if the Context was not properly initialized. Contexts passed to request
 // handlers and plugins are guaranteed to be properly initialized.
-var ContextNotInitializedErr = errors.New("context not initialized")
+var ErrContextNotInitialized = errors.New("context not initialized")
 
 // Context contains useful state information for request handling.
 // Inside Context is the original http.ResponseWriter and *http.Request
@@ -37,7 +37,7 @@ type Context struct {
 // key or an error if Context was not properly initialized.
 func (c *Context) Get(key string) (string, error) {
 	if c.Request == nil {
-		return "", ContextNotInitializedErr
+		return "", ErrContextNotInitialized
 	}
 
 	if c.params == nil {
@@ -47,11 +47,11 @@ func (c *Context) Get(key string) (string, error) {
 	return c.params.Get(key), nil
 }
 
-// Get multi returns the a slice containing all relevant parameters
+// GetMulti returns the a slice containing all relevant parameters
 // tied to key or an error if Context was not properly initialized.
 func (c *Context) GetMulti(key string) ([]string, error) {
 	if c.Request == nil {
-		return nil, ContextNotInitializedErr
+		return nil, ErrContextNotInitialized
 	}
 
 	if c.params == nil {
@@ -99,7 +99,7 @@ func (c *Context) GetInt64(key string) (int64, error) {
 // initialized.
 func (c *Context) Set(key, value string) error {
 	if c.Request == nil {
-		return ContextNotInitializedErr
+		return ErrContextNotInitialized
 	}
 
 	if c.params == nil {
@@ -118,7 +118,7 @@ func (c *Context) Set(key, value string) error {
 // initialized.
 func (c *Context) SetMulti(key string, values []string) error {
 	if c.Request == nil {
-		return ContextNotInitializedErr
+		return ErrContextNotInitialized
 	}
 
 	if c.params == nil {

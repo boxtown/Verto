@@ -1,4 +1,4 @@
-// Verto is a simple REST framework. It is
+// Packaged Verto is a simple REST framework. It is
 // plug n' play and includes it's own path
 // multiplexer, error handler, and response
 // handler. It is recommended to bring your
@@ -37,7 +37,7 @@ type ErrorHandler interface {
 	Handle(err error, c *Context)
 }
 
-// Errorfunc wraps functions so that they implement ErrorHandler
+// ErrorFunc wraps functions so that they implement ErrorHandler
 type ErrorFunc func(err error, c *Context)
 
 // Handle calls the function wrapped by ErrorFunc.
@@ -78,7 +78,7 @@ func (vpf VertoPluginFunc) Handle(c *Context, next http.HandlerFunc) {
 	vpf(c, next)
 }
 
-// MuxWrapped is a wrapper around mux.Node that allows the use of Verto plugins.
+// MuxWrapper is a wrapper around mux.Node that allows the use of Verto plugins.
 type MuxWrapper struct {
 	mux.Node
 }
@@ -133,7 +133,7 @@ type Verto struct {
 	doLogging       bool
 }
 
-// Returns a pointer to a newly initialized Verto instance.
+// New returns a pointer to a newly initialized Verto instance.
 func New() *Verto {
 	v := Verto{
 		muxer:      mux.New(),
@@ -244,7 +244,7 @@ func (v *Verto) UseHandler(handler http.Handler) *Verto {
 	return v
 }
 
-// UserVerto wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
+// UseVerto wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
 func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := &Context{
@@ -279,7 +279,7 @@ func (v *Verto) RunOn(addr string) {
 		"GET",
 		"/shutdown",
 		func(w http.ResponseWriter, r *http.Request) {
-			ip := GetIp(r)
+			ip := GetIP(r)
 			if ip == "127.0.0.1" || ip == "::1" {
 				sl.Stop()
 			} else {
@@ -337,7 +337,7 @@ func DefaultResponseHandlerFunc(response interface{}, c *Context) {
 
 // GetIp retrieves the ip address of the requester. GetIp recognizes
 // the "x-forwarded-for" header.
-func GetIp(r *http.Request) string {
+func GetIP(r *http.Request) string {
 	if ip := r.Header.Get("x-forwarded-for"); len(ip) > 0 {
 		return ip
 	}
