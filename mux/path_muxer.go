@@ -18,16 +18,17 @@ import (
 // -----------------------------
 // ---------- Plugins ----------
 
-// An interface for Plugins. If the plugin ran successfully, call next
+// PluginHandler is an interface for Plugins.
+// If the plugin ran successfully, call next
 // to continue the chain of plugins.
 type PluginHandler interface {
 	Handle(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 }
 
-// PluginFunc is a function that implements the PluginHandler interface.
+// PluginFunc wraps functions so that they implement the PluginHandler interface.
 type PluginFunc func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 
-// Calls PluginFunc.
+// Handle calls the function wrapped as a PluginFunc.
 func (p PluginFunc) Handle(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 	p(w, r, next)
 }
@@ -117,22 +118,22 @@ func (p *plugins) run(w http.ResponseWriter, r *http.Request) {
 // -------------------------------------
 // ---------- Path Tree Nodes ----------
 
-// An interface for endpoint nodes that
+// Node is an interface for endpoint nodes that
 // allows for the addition of per-route plugin
-// handlers to the node.
+// handlers.
 type Node interface {
 	Use(handler PluginHandler) Node
 	UseHandler(hander http.Handler) Node
 }
 
-// The PathMuxer implementation of Node.
+// MuxNode is the PathMuxer implementation of Node.
 type MuxNode struct {
 	chain     *plugins
 	chainLock *sync.RWMutex
 	handler   http.Handler
 }
 
-// Returns a pointer to a newly initialized MuxNode.
+// NewMuxNode returns a pointer to a newly initialized MuxNode.
 func NewMuxNode() *MuxNode {
 	return &MuxNode{
 		chain:     &plugins{},
@@ -140,8 +141,8 @@ func NewMuxNode() *MuxNode {
 	}
 }
 
-// Adds a PluginHandler onto the end of the chain of plugins
-// for this node.
+// Use adds a PluginHandler onto the end of the chain of plugins
+// for a node.
 func (node *MuxNode) Use(handler PluginHandler) Node {
 	node.chainLock.Lock()
 	defer node.chainLock.Unlock()
@@ -168,8 +169,8 @@ func (node *MuxNode) Use(handler PluginHandler) Node {
 	return node
 }
 
-// Wrap the handler as a PluginHandler and add it onto the end
-// of the plguin chain for this node.
+// UseHandler wraps the handler as a PluginHandler and adds it onto the end
+// of the plugin chain.
 func (node *MuxNode) UseHandler(handler http.Handler) Node {
 	pluginHandler := PluginFunc(
 		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
@@ -202,7 +203,7 @@ type PathMuxer struct {
 	Strict bool
 }
 
-// Returns a pointer to a newly initialized PathMuxer.
+// New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
 		chain:     &plugins{},
@@ -249,7 +250,7 @@ func (mux *PathMuxer) endpoint(w http.ResponseWriter, r *http.Request, next http
 	}
 }
 
-// Add a plugin handler onto the end of the chain of global
+// Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
 func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 	mux.chainLock.Lock()
@@ -269,7 +270,7 @@ func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 	return mux
 }
 
-// Wrap the handler as a PluginHandler and add it onto the ned of
+// UseHandler wraps the handler as a PluginHandler and adds it onto the ned of
 // the global plugin chain for the muxer.
 func (mux *PathMuxer) UseHandler(handler http.Handler) *PathMuxer {
 	pluginHandler := PluginFunc(
@@ -282,8 +283,8 @@ func (mux *PathMuxer) UseHandler(handler http.Handler) *PathMuxer {
 	return mux
 }
 
-// Sets the handler for a specific method+path combination. Can handle
-// wildcard paths e.g. /account/{id}. Returns the endpoint node.
+// Add sets the handler for a specific method+path combination
+// and returns the endpoint node.
 func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 	path = cleanPath(path)
 
@@ -297,8 +298,8 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 	return node
 }
 
-// Sets a handler with handler function f for a specifi method+path
-// combination. Can handle wildcard paths e.g. /account/{id}. Returns the endpoint node.
+// AddFunc wraps f as an http.Handler and set is as handler for a specific method+path
+// combination. AddFunc returns the endpoint node.
 func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter, r *http.Request)) Node {
 
 	return mux.Add(method, path, http.Handler(http.HandlerFunc(f)))
@@ -340,7 +341,7 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // -----------------------------
 // ---------- Helpers ----------
 
-// Default http.Handler for Not Found responses. Returns a 404 status
+// NotFoundHandler is the default http.Handler for Not Found responses. Returns a 404 status
 // with message "Not Found."
 type NotFoundHandler struct{}
 
@@ -349,7 +350,7 @@ func (handler NotFoundHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNotFound)
 }
 
-// Default http.Handler for Not Implemented responses. Returns a 501 status
+// NotImplementedHandler is the default http.Handler for Not Implemented responses. Returns a 501 status
 // with message "Not Implemented."
 type NotImplementedHandler struct{}
 
@@ -358,7 +359,7 @@ func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Default http.Handler for Redirect responses. Returns a 301 status and redirects
+// ReirectHandler is the default http.Handler for Redirect responses. Returns a 301 status and redirects
 // to the URL stored in r. This handler assumes the necessary adjustments to r.URL
 // have been made prior to calling the handler.
 type RedirectHandler struct{}

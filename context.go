@@ -15,7 +15,7 @@ type Context struct {
 
 	params url.Values
 
-	Injections map[string]interface{}
+	Injections *Injections
 	Logger     Logger
 }
 

@@ -20,43 +20,43 @@ import (
 // -------------------------------------------
 // -------- Interfaces/Definitions -----------
 
-// Interface for loggers
+// Logger is the Verto-specific interface for loggers
 type Logger interface {
-	// Log a message to the default logger. Returns true if successful.
+	// Log logs a message to the default logger. Returns true if successful.
 	Log(msg string) bool
 
-	// Log a message to the named file. Returns true if successful.
+	// LogTo logs a message to the named file. Returns true if successful.
 	LogTo(name, msg string) bool
 }
 
-// Interface for error handlers
+// ErrorHandler is the Verto-specific interface for error handlers
 type ErrorHandler interface {
 
-	// Handle the error. Context is guaranteed to be
+	// Handle handles the error. Context is guaranteed to be
 	// populated if ErrorHandler is registed through Verto.
 	Handle(err error, c *Context)
 }
 
-// Function wrapper that implements ErrorHandler
+// Errorfunc wraps functions so that they implement ErrorHandler
 type ErrorFunc func(err error, c *Context)
 
-// Calls ErrorFunc.
+// Handle calls the function wrapped by ErrorFunc.
 func (erf ErrorFunc) Handle(err error, c *Context) {
 	erf(err, c)
 }
 
-// Interface for response handlers
+// ResponseHandler is the Verto-specific interface for response handlers
 type ResponseHandler interface {
 
-	// Handle the response.Context is guaranteed to be
+	// Handle handles the response. Context is guaranteed to be
 	// populated if ResponseHandler is registered through Verto.
 	Handle(response interface{}, c *Context)
 }
 
-// Function wrapper that implements ResponseHandler
+// ResponseFunc wraps functions so that they implement ResponseHandler
 type ResponseFunc func(response interface{}, c *Context)
 
-// Calls ResponseFunc.
+// Handle calls the function wrapped by ResponseFunc.
 func (rf ResponseFunc) Handle(response interface{}, c *Context) {
 	rf(response, c)
 }
@@ -64,7 +64,7 @@ func (rf ResponseFunc) Handle(response interface{}, c *Context) {
 // -----------------------------------
 // ----------- Mux Wrapper -----------
 
-// Custom plugin definition for Verto that allows injections by
+// VertoPlugin is a custom plugin definition for Verto that allows injections by
 // context.
 type VertoPlugin interface {
 	Handle(c *Context, next http.HandlerFunc)
@@ -73,29 +73,29 @@ type VertoPlugin interface {
 // VertoPluginFunc wraps functions as Verto Plugins
 type VertoPluginFunc func(c *Context, next http.HandlerFunc)
 
-// Calls VertoPluginFunc.
+// Handle calls functions wrapped by VertoPluginFunc.
 func (vpf VertoPluginFunc) Handle(c *Context, next http.HandlerFunc) {
 	vpf(c, next)
 }
 
-// A wrapper around mux.Node that allows the use of Verto plugins.
+// MuxWrapped is a wrapper around mux.Node that allows the use of Verto plugins.
 type MuxWrapper struct {
 	mux.Node
 }
 
-// Wrapper around mux.Node.Use that returns a MuxWrapper instead
+// Use is a wrapper around mux.Node.Use that returns a MuxWrapper instead
 // of a mux.Node
 func (mw *MuxWrapper) Use(handler mux.PluginHandler) *MuxWrapper {
 	return &MuxWrapper{mw.Node.Use(handler)}
 }
 
-// Wrapper around mux.Node.UseHandler that returns a MuxWrapper instead
+// UseHandler is a wrapper around mux.Node.UseHandler that returns a MuxWrapper instead
 // of a mux.Node
 func (mw *MuxWrapper) UseHandler(handler http.Handler) *MuxWrapper {
 	return &MuxWrapper{mw.Node.UseHandler(handler)}
 }
 
-// Wraps a VertoPlugin as a mux.PluginHandler and injects v's injections
+// UseVerto wraps a VertoPlugin as a mux.PluginHandler and injects v's injections
 // into the context. Returns the MuxWrapper for chaining.
 func (mw *MuxWrapper) UseVerto(v *Verto, plugin VertoPlugin) *MuxWrapper {
 	if v == nil {
@@ -116,17 +116,18 @@ func (mw *MuxWrapper) UseVerto(v *Verto, plugin VertoPlugin) *MuxWrapper {
 	return &MuxWrapper{mw.Node.Use(mux.PluginFunc(pluginFunc))}
 }
 
-// Function definition for Verto resource handlers
+// ResourceFunc is the Verto-specifc function for Verto resource handling.
 type ResourceFunc func(c *Context) (interface{}, error)
 
 // ----------------------------
 // ---------- Verto -----------
 
-// Manages the routing and handling of all requests.
+// Verto is the framework that runs your app.
 type Verto struct {
-	muxer           *mux.PathMuxer
+	muxer      *mux.PathMuxer
+	injections *Injections
+
 	logger          Logger
-	injections      map[string]interface{}
 	errorHandler    ErrorHandler
 	responseHandler ResponseHandler
 	doLogging       bool
@@ -136,7 +137,7 @@ type Verto struct {
 func New() *Verto {
 	v := Verto{
 		muxer:      mux.New(),
-		injections: make(map[string]interface{}),
+		injections: NewInjections(),
 		logger:     nil,
 		doLogging:  false,
 	}
@@ -147,13 +148,25 @@ func New() *Verto {
 	return &v
 }
 
-// Inject a new Injection into the global context
+// Inject injects a new Injection into the global context
 func (v *Verto) Inject(tag string, injection interface{}) *Verto {
-	v.injections[tag] = injection
+	v.injections.Set(tag, injection)
 	return v
 }
 
-// Register a specific method+path combination to
+// Uninject clears an injection from the global context
+func (v *Verto) Uninject(tag string) *Verto {
+	v.injections.Delete(tag)
+	return v
+}
+
+// ClearInjections clears the global context of all injections
+func (v *Verto) ClearInjections() *Verto {
+	v.injections.Clear()
+	return v
+}
+
+// Register registers a specific method+path combination to
 // a resource function. Any function registered using
 // Register() can be assured the Context will not be null
 func (v *Verto) Register(
@@ -182,7 +195,7 @@ func (v *Verto) Register(
 	return &MuxWrapper{v.muxer.AddFunc(method, path, handlerFunc)}
 }
 
-// Register a specific method+path combination to
+// RegisterHandler registers a specific method+path combination to
 // an http.Handler.
 func (v *Verto) RegisterHandler(
 	method, path string,
@@ -191,48 +204,47 @@ func (v *Verto) RegisterHandler(
 	return &MuxWrapper{v.muxer.Add(method, path, handler)}
 }
 
-// Register a logger to Verto.
-// This will replace but not close the existing logger.
+// RegisterLogger register a logger to Verto.
 func (v *Verto) RegisterLogger(logger Logger) {
 	v.logger = logger
 }
 
-// Register an ErrorHandler to Verto.
+// RegisterErrorHandler registers an ErrorHandler to Verto.
 // If no handler is registered, DefaultErrorHandler is used.
 func (v *Verto) RegisterErrorHandler(errorHandler ErrorHandler) {
 	v.errorHandler = errorHandler
 }
 
-// Register a ResponseHandler to Verto.
+// RegisterResponseHandler registers a ResponseHandler to Verto.
 // If no handler is registered, DefaultResponseHandler is used.
 func (v *Verto) RegisterResponseHandler(responseHandler ResponseHandler) {
 	v.responseHandler = responseHandler
 }
 
-// Sets whether Verto logs or not.
+// SetLogging sets whether Verto logs or not.
 func (v *Verto) SetLogging(log bool) {
 	v.doLogging = log
 }
 
-// Sets whether to do strict path matching or not.
+// SetStrict sets whether to do strict path matching or not.
 func (v *Verto) SetStrict(strict bool) {
 	v.muxer.Strict = strict
 }
 
-// Use a global plugin. Plugins are called in order of definition.
+// Use registers a global plugin. Plugins are called in order of definition.
 // This function is just a wrapper for the muxer's global plugin chain.
 func (v *Verto) Use(handler mux.PluginHandler) *Verto {
 	v.muxer.Use(handler)
 	return v
 }
 
-// Wraps an http Handler as a PluginHandler and calls Verto.Use().
+// UseHandler wraps an http.Handler as a PluginHandler and calls Verto.Use().
 func (v *Verto) UseHandler(handler http.Handler) *Verto {
 	v.muxer.UseHandler(handler)
 	return v
 }
 
-// Wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
+// UserVerto wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
 func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := &Context{
@@ -249,7 +261,7 @@ func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 	return v
 }
 
-// Run Verto on the specified address (e.g. ":8080").
+// RunOn runs Verto on the specified address (e.g. ":8080").
 // RunOn by defaults adds a shutdown endpoint for Verto
 // at /shutdown which can only be called locally.
 func (v *Verto) RunOn(addr string) {
@@ -285,7 +297,7 @@ func (v *Verto) RunOn(addr string) {
 	}
 }
 
-// Runs Verto on address ":8080".
+// Run runs Verto on address ":8080".
 func (v *Verto) Run() {
 	v.RunOn(":8080")
 }
@@ -293,7 +305,9 @@ func (v *Verto) Run() {
 // -------------------------------
 // ---------- Helpers ------------
 
-// Default error handler
+// DefaultErrorHandlerFunc is the default error handling
+// function for Verto. DefaultErrorHandlerFunc sends a 500 response
+// and the error message as the response body.
 func DefaultErrorHandlerFunc(err error, c *Context) {
 	if c == nil {
 		return
@@ -306,7 +320,9 @@ func DefaultErrorHandlerFunc(err error, c *Context) {
 	fmt.Fprint(c.Response, err.Error())
 }
 
-// Default response handler
+// DefaultResponseHandlerFunc is the default response handling
+// function for Verto. DefaultResponseFunc sends a 200 response with
+// response as the response body.
 func DefaultResponseHandlerFunc(response interface{}, c *Context) {
 	if c == nil {
 		return
@@ -319,7 +335,7 @@ func DefaultResponseHandlerFunc(response interface{}, c *Context) {
 	fmt.Fprint(c.Response, response)
 }
 
-// Retrieves the ip address of the requester. Recognizes
+// GetIp retrieves the ip address of the requester. GetIp recognizes
 // the "x-forwarded-for" header.
 func GetIp(r *http.Request) string {
 	if ip := r.Header.Get("x-forwarded-for"); len(ip) > 0 {
