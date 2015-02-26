@@ -1,4 +1,4 @@
-// Packaged Verto is a simple REST framework. It is
+// Package Verto is a simple REST framework. It is
 // plug n' play and includes it's own path
 // multiplexer, error handler, and response
 // handler. It is recommended to bring your
@@ -19,15 +19,6 @@ import (
 
 // -------------------------------------------
 // -------- Interfaces/Definitions -----------
-
-// Logger is the Verto-specific interface for loggers
-type Logger interface {
-	// Log logs a message to the default logger. Returns true if successful.
-	Log(msg string) bool
-
-	// LogTo logs a message to the named file. Returns true if successful.
-	LogTo(name, msg string) bool
-}
 
 // ErrorHandler is the Verto-specific interface for error handlers
 type ErrorHandler interface {
@@ -107,7 +98,7 @@ func (mw *MuxWrapper) UseVerto(v *Verto, plugin VertoPlugin) *MuxWrapper {
 			Response:   w,
 			Request:    r,
 			Injections: v.injections,
-			Logger:     v.logger,
+			Logger:     v.Logger,
 		}
 
 		plugin.Handle(c, next)
@@ -124,22 +115,24 @@ type ResourceFunc func(c *Context) (interface{}, error)
 
 // Verto is the framework that runs your app.
 type Verto struct {
+	Logger    Logger
+	doLogging bool
+
 	muxer      *mux.PathMuxer
 	injections *Injections
 
-	logger          Logger
 	errorHandler    ErrorHandler
 	responseHandler ResponseHandler
-	doLogging       bool
 }
 
 // New returns a pointer to a newly initialized Verto instance.
 func New() *Verto {
 	v := Verto{
+		Logger:    NewLogger(),
+		doLogging: false,
+
 		muxer:      mux.New(),
 		injections: NewInjections(),
-		logger:     nil,
-		doLogging:  false,
 	}
 
 	v.errorHandler = ErrorFunc(DefaultErrorHandlerFunc)
@@ -178,13 +171,13 @@ func (v *Verto) Register(
 			Response:   w,
 			Request:    r,
 			Injections: v.injections,
-			Logger:     v.logger,
+			Logger:     v.Logger,
 		}
 
 		response, err := rf(c)
 		if err != nil {
 			if v.doLogging {
-				v.logger.Log(err.Error())
+				v.Logger.Error(err.Error())
 			}
 			v.errorHandler.Handle(err, c)
 		} else {
@@ -204,9 +197,9 @@ func (v *Verto) RegisterHandler(
 	return &MuxWrapper{v.muxer.Add(method, path, handler)}
 }
 
-// RegisterLogger register a logger to Verto.
-func (v *Verto) RegisterLogger(logger Logger) {
-	v.logger = logger
+// RegisterLogger register a Logger to Verto.
+func (v *Verto) RegisterLogger(Logger Logger) {
+	v.Logger = Logger
 }
 
 // RegisterErrorHandler registers an ErrorHandler to Verto.
@@ -251,7 +244,7 @@ func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 			Response:   w,
 			Request:    r,
 			Injections: v.injections,
-			Logger:     v.logger,
+			Logger:     v.Logger,
 		}
 
 		plugin.Handle(c, next)
@@ -266,7 +259,7 @@ func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
 // at /shutdown which can only be called locally.
 func (v *Verto) RunOn(addr string) {
 	if v.doLogging {
-		v.logger.Log("Server initializing...")
+		v.Logger.Info("Server initializing...")
 	}
 
 	listener, err := net.Listen("tcp", addr)
@@ -293,7 +286,7 @@ func (v *Verto) RunOn(addr string) {
 	server.Serve(sl)
 
 	if v.doLogging {
-		v.logger.Log("Server shutting down.")
+		v.Logger.Info("Server shutting down.")
 	}
 }
 
@@ -335,7 +328,7 @@ func DefaultResponseHandlerFunc(response interface{}, c *Context) {
 	fmt.Fprint(c.Response, response)
 }
 
-// GetIp retrieves the ip address of the requester. GetIp recognizes
+// GetIP retrieves the ip address of the requester. GetIp recognizes
 // the "x-forwarded-for" header.
 func GetIP(r *http.Request) string {
 	if ip := r.Header.Get("x-forwarded-for"); len(ip) > 0 {
