@@ -6,19 +6,21 @@ import (
 	"time"
 )
 
-var StoppedError = errors.New("Listener stopped.")
+// StoppedError gets returned by stoppable listener when a stop
+// signal is sent to the listener.
+var StoppedError = errors.New("listener stopped")
 
 type StoppableListener struct {
 	*net.TCPListener
 	stop chan int
 }
 
-// Wraps an existing listener as a new StoppableListener. Currently
+// WrapListener wraps an existing listener as a new StoppableListener. Currently
 // only supports net.TCPListener pointers for wrapping.
 func WrapListener(listener net.Listener) (*StoppableListener, error) {
 	tcpListener, ok := listener.(*net.TCPListener)
 	if !ok {
-		return nil, errors.New("Cannot wrap listener.")
+		return nil, errors.New("cannot wrap listener")
 	}
 
 	wrappedListener := StoppableListener{
@@ -28,7 +30,7 @@ func WrapListener(listener net.Listener) (*StoppableListener, error) {
 	return &wrappedListener, nil
 }
 
-// Wrapped accept function that polls for a stop command
+// Accept wraps the accept function and polls for a stop command
 // every second.
 func (sl *StoppableListener) Accept() (net.Conn, error) {
 	for {
@@ -53,7 +55,7 @@ func (sl *StoppableListener) Accept() (net.Conn, error) {
 	}
 }
 
-// Sends a stop command to the listener.
+//Stop sends a stop command to the listener.
 func (sl *StoppableListener) Stop() {
 	close(sl.stop)
 }

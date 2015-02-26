@@ -10,9 +10,16 @@ import (
 // --------------------------------
 // ---------- Mux Errors ----------
 
-var ErrNotFound = errors.New("mux: Handler not found.")
-var ErrNotImplemented = errors.New("mux: Handler not implemented.")
-var ErrRedirectSlash = errors.New("mux: Redirect trailing slash")
+// ErrNotFound gets returned by Matcher if a path could not be matched.
+var ErrNotFound = errors.New("mux: handler not found")
+
+// ErrNotImplemented gets returned by Matcher if a path could be matched
+// but the method could not be found.
+var ErrNotImplemented = errors.New("mux: handler not implemented")
+
+// ErrRedirectSlash gets returned by Matcher if a path could not be matched
+// but a path with (without) a slash exists.
+var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 
 // -----------------------------
 // ---------- Matcher ----------
