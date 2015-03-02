@@ -41,6 +41,12 @@ type plugin struct {
 	prev    *plugin
 }
 
+var emptyPlugin = &plugin{
+	handler: PluginFunc(func(w http.ResponseWriter, r *http.Request, nex http.HandlerFunc) {
+
+	}),
+}
+
 func (p *plugin) run(w http.ResponseWriter, r *http.Request) {
 	p.handler.Handle(w, r, p.next.run)
 }
@@ -52,21 +58,20 @@ type plugins struct {
 	length int64
 }
 
+func newPlugins() *plugins {
+	return &plugins{emptyPlugin, emptyPlugin, 0}
+}
+
 func (p *plugins) use(handler PluginHandler) {
 	p.length = p.length + 1
 
 	plugin := &plugin{
 		handler: handler,
-		next: &plugin{
-			handler: PluginFunc(func(
-				w http.ResponseWriter,
-				r *http.Request,
-				next http.HandlerFunc) {
-			}),
-		},
+		next:    emptyPlugin,
+		prev:    emptyPlugin,
 	}
 
-	if p.head == nil {
+	if p.head == nil || p.head == emptyPlugin {
 		p.head = plugin
 		p.tail = p.head
 		return
@@ -78,37 +83,37 @@ func (p *plugins) use(handler PluginHandler) {
 }
 
 func (p *plugins) popHead() {
-	if p.head == nil {
+	if p.head == nil || p.head == emptyPlugin {
 		return
 	}
 
 	p.length = p.length - 1
 
 	p.head = p.head.next
-	if p.head != nil {
-		p.head.prev = nil
+	if p.head != nil && p.head != emptyPlugin {
+		p.head.prev = emptyPlugin
 	} else {
-		p.tail = nil
+		p.tail = emptyPlugin
 	}
 }
 
 func (p *plugins) popTail() {
-	if p.tail == nil {
+	if p.tail == nil || p.tail == emptyPlugin {
 		return
 	}
 
 	p.length = p.length - 1
 
 	p.tail = p.tail.prev
-	if p.tail != nil {
-		p.tail.next = nil
+	if p.tail != nil && p.tail != emptyPlugin {
+		p.tail.next = emptyPlugin
 	} else {
-		p.head = nil
+		p.head = emptyPlugin
 	}
 }
 
 func (p *plugins) run(w http.ResponseWriter, r *http.Request) {
-	if p.head == nil {
+	if p.head == nil || p.head == emptyPlugin {
 		return
 	}
 
@@ -136,7 +141,7 @@ type MuxNode struct {
 // NewMuxNode returns a pointer to a newly initialized MuxNode.
 func NewMuxNode() *MuxNode {
 	return &MuxNode{
-		chain:     &plugins{},
+		chain:     newPlugins(),
 		chainLock: &sync.RWMutex{},
 	}
 }
@@ -148,7 +153,7 @@ func (node *MuxNode) Use(handler PluginHandler) Node {
 	defer node.chainLock.Unlock()
 
 	if node.chain == nil {
-		node.chain = &plugins{}
+		node.chain = newPlugins()
 	}
 
 	// Since we always add node.handler as the last handler,
@@ -206,7 +211,7 @@ type PathMuxer struct {
 // New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
-		chain:     &plugins{},
+		chain:     newPlugins(),
 		chainLock: &sync.RWMutex{},
 		matcher:   &DefaultMatcher{},
 
@@ -257,7 +262,7 @@ func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 	defer mux.chainLock.Unlock()
 
 	if mux.chain == nil {
-		mux.chain = &plugins{}
+		mux.chain = newPlugins()
 	}
 
 	tail := mux.chain.tail
@@ -293,6 +298,8 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 		node = NewMuxNode()
 		node.handler = handler
 		mux.matcher.Add(method, path, node)
+	} else {
+		node.handler = handler
 	}
 
 	return node
@@ -314,11 +321,14 @@ func (mux *PathMuxer) find(method, path string) (*MuxNode, url.Values, error) {
 	path = cleanPath(path)
 
 	data, values, err := mux.matcher.Match(method, path)
-	if node, ok := data.(*MuxNode); ok {
-		return node, values, err
-	} else {
+	if err != nil {
+		return nil, nil, err
+	}
+	node, ok := data.(*MuxNode)
+	if !ok {
 		return nil, nil, ErrNotFound
 	}
+	return node, values, nil
 }
 
 // ServeHTTP dispatches the correct handler for the route.
