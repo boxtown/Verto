@@ -235,9 +235,14 @@ func (mux *PathMuxer) endpoint(w http.ResponseWriter, r *http.Request, next http
 	} else if err == ErrNotFound {
 		mux.NotFound.ServeHTTP(w, r)
 		return
-	} else if err == ErrRedirectSlash && !mux.Strict {
-		r.URL.Path = handleTrailingSlash(r.URL.Path)
-		mux.Redirect.ServeHTTP(w, r)
+	} else if err == ErrRedirectSlash {
+		if !mux.Strict {
+			r.URL.Path = handleTrailingSlash(r.URL.Path)
+			mux.Redirect.ServeHTTP(w, r)
+			return
+		}
+
+		mux.NotFound.ServeHTTP(w, r)
 		return
 	}
 
@@ -334,10 +339,7 @@ func (mux *PathMuxer) find(method, path string) (*MuxNode, url.Values, error) {
 // ServeHTTP dispatches the correct handler for the route.
 func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p := cleanPath(r.URL.Path); p != r.URL.Path {
-
-		url := *r.URL
-		url.Path = p
-
+		r.URL.Path = p
 		mux.Redirect.ServeHTTP(w, r)
 		return
 	}
