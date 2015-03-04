@@ -91,6 +91,12 @@ be more strictly defined using regular expressions. Named parameters will be inj
     v.RegisterHandler("PUT", "/path/to/{param: ^[0-9]+$}", endpoint2)
   ```
   
+### Path redirection  
+If a path contains extraneous symbols like extra /'s or .'s (barring trailing /'s), Verto will automatically
+clean the path and send a redirect response to the cleaned path. By default, Verto will not attempt to redirect
+paths with (without) trailing slashes if the other exists. Calling `SetStrict(false)` on a Verto instance
+lets Verto know that you want it to redirect if possible trailing slashes.
+  
 ### Middleware Chaining  
   
 Verto provides the option to chain middleware both globally and per route.
@@ -263,7 +269,8 @@ the user brings his own handler. The default just responds with a `500 Internal 
 ### Injections  
   
 Injections are anything from the outside world you need passed to an endpoint  
-handler. 
+handler. A single injection instance is passed to all handlers and plugins.  
+**NOTE:** THe Inject(), Uninject(), and ClearInjection() functions **ARE** thread safe.  
   
   ```Go
     // Injection example
@@ -280,6 +287,12 @@ handler.
     }{}
     v.Inject("slice", sl)
     v.Inject("struct", st)
+    
+    // Uninject() removes an injection.
+    v.Uninject("slice")
+    
+    // ClearInjections clears all injections
+    v.ClearInjections()
   ```
   
 Injections are useful for things intricate loggers, analytics,  
