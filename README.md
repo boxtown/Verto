@@ -8,6 +8,7 @@ logging, and middleware chaining.
   - [Basic Usage](#basic-usage)
   - [Resource Function](#resource-function)
   - [Routing](#routing)
+  - [Path Redirection](#path-redirection)
   - [Middleware Chaining](#middleware-chaining)
   - [Context](#context)
   - [Response Handler](#response-handler)
@@ -270,7 +271,7 @@ the user brings his own handler. The default just responds with a `500 Internal 
   
 Injections are anything from the outside world you need passed to an endpoint  
 handler. A single injection instance is passed to all handlers and plugins.  
-**NOTE:** THe Inject(), Uninject(), and ClearInjection() functions **ARE** thread safe.  
+**NOTE:** The `Inject()`, `Uninject()`, and `ClearInjection()` functions **ARE** thread safe.  
   
   ```Go
     // Injection example
