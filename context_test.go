@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestGet(t *testing.T) {
+func TestContextGet(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -31,7 +31,7 @@ func TestGet(t *testing.T) {
 	}
 }
 
-func TestGetMulti(t *testing.T) {
+func TestContextGetMulti(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -60,7 +60,7 @@ func TestGetMulti(t *testing.T) {
 	}
 }
 
-func TestGetBool(t *testing.T) {
+func TestContextGetBool(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -81,7 +81,7 @@ func TestGetBool(t *testing.T) {
 	}
 }
 
-func TestGetFloat64(t *testing.T) {
+func TestContextGetFloat64(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -102,7 +102,7 @@ func TestGetFloat64(t *testing.T) {
 	}
 }
 
-func TestGetInt64(t *testing.T) {
+func TestContextGetInt64(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -123,7 +123,7 @@ func TestGetInt64(t *testing.T) {
 	}
 }
 
-func TestSet(t *testing.T) {
+func TestContextSet(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -157,7 +157,7 @@ func TestSet(t *testing.T) {
 	}
 }
 
-func TestSetMulti(t *testing.T) {
+func TestContextSetMulti(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -197,7 +197,7 @@ func TestSetMulti(t *testing.T) {
 	}
 }
 
-func TestSetBool(t *testing.T) {
+func TestContextSetBool(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -223,7 +223,7 @@ func TestSetBool(t *testing.T) {
 	}
 }
 
-func TestSetFloat64(t *testing.T) {
+func TestContextSetFloat64(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -249,7 +249,7 @@ func TestSetFloat64(t *testing.T) {
 	}
 }
 
-func TestSetInt64(t *testing.T) {
+func TestContextSetInt64(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
