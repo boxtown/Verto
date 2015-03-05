@@ -59,7 +59,11 @@ func (vl *VertoLogger) AddFile(f *os.File) error {
 // and will begin writing messages to the file or return an error
 // if an error occured opening up the file.
 func (vl *VertoLogger) AddFilePath(path string) error {
-	f, err := os.OpenFile(path, os.O_APPEND, os.ModeAppend)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	_, err = f.WriteString("\n")
 	if err != nil {
 		return err
 	}
@@ -125,7 +129,12 @@ func (vl *VertoLogger) printf(prefix, format string, v ...interface{}) error {
 	buf.WriteString(": ")
 	buf.WriteString(prefix)
 	buf.WriteString(" ")
-	buf.WriteString(fmt.Sprintf(format, v))
+
+	if len(v) > 0 {
+		buf.WriteString(fmt.Sprintf(format, v))
+	} else {
+		buf.WriteString(fmt.Sprint(format))
+	}
 
 	msg := buf.String()
 
