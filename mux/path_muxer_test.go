@@ -2,9 +2,8 @@
 package mux
 
 import (
-	"bytes"
-	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -500,38 +499,18 @@ func TestPathMuxerUseHandler(t *testing.T) {
 	pm.chain.run(nil, r)
 }
 
-type BufResponseWriter struct {
-	io.Writer
-
-	status int
-	header http.Header
-}
-
-func (brw *BufResponseWriter) Header() http.Header {
-	return brw.header
-}
-
-func (brw *BufResponseWriter) Write(b []byte) (int, error) {
-	return brw.Writer.Write(b)
-}
-
-func (brw *BufResponseWriter) WriteHeader(status int) {
-	brw.status = status
-}
-
 func TestNotFoundHandler(t *testing.T) {
 	err := "Failed not found handler."
 
-	var buf bytes.Buffer
-	brw := &BufResponseWriter{&buf, 0, http.Header{}}
+	w := httptest.NewRecorder()
 
 	nfh := NotFoundHandler{}
-	nfh.ServeHTTP(brw, nil)
+	nfh.ServeHTTP(w, nil)
 
-	if buf.String() != "Not Found." {
+	if w.Body.String() != "Not Found." {
 		t.Errorf(err)
 	}
-	if brw.status != 404 {
+	if w.Code != 404 {
 		t.Errorf(err)
 	}
 }
@@ -539,16 +518,15 @@ func TestNotFoundHandler(t *testing.T) {
 func TestNotImplementedHandler(t *testing.T) {
 	err := "Failed not implemented handler."
 
-	var buf bytes.Buffer
-	brw := &BufResponseWriter{&buf, 0, http.Header{}}
+	w := httptest.NewRecorder()
 
 	nih := NotImplementedHandler{}
-	nih.ServeHTTP(brw, nil)
+	nih.ServeHTTP(w, nil)
 
-	if buf.String() != "Not Implemented." {
+	if w.Body.String() != "Not Implemented." {
 		t.Errorf(err)
 	}
-	if brw.status != 501 {
+	if w.Code != 501 {
 		t.Errorf(err)
 	}
 }
@@ -556,18 +534,17 @@ func TestNotImplementedHandler(t *testing.T) {
 func TestRedirectHandler(t *testing.T) {
 	err := "Failed not redirect handler."
 
-	var buf bytes.Buffer
-	brw := &BufResponseWriter{&buf, 0, http.Header{}}
+	w := httptest.NewRecorder()
 
 	r, _ := http.NewRequest("GET", "http://test.com", nil)
 
 	rh := RedirectHandler{}
-	rh.ServeHTTP(brw, r)
+	rh.ServeHTTP(w, r)
 
-	if brw.Header().Get("Location") != "http://test.com" {
+	if w.Header().Get("Location") != "http://test.com" {
 		t.Errorf(err)
 	}
-	if brw.status != 301 {
+	if w.Code != 301 {
 		t.Errorf(err)
 	}
 }
@@ -589,52 +566,51 @@ func TestPathMuxerServeHTTP(t *testing.T) {
 		tVal = "A"
 	})
 
-	var buf bytes.Buffer
-	brw := &BufResponseWriter{&buf, 0, http.Header{}}
+	w := httptest.NewRecorder()
 
 	// Test successful request
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
-	pm.ServeHTTP(brw, r)
+	pm.ServeHTTP(w, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
 
 	// Test clean path
-	brw = &BufResponseWriter{new(bytes.Buffer), 0, http.Header{}}
+	w = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "http://test.com/path/./to/../to/handler", nil)
-	pm.ServeHTTP(brw, r)
-	if brw.status != 301 {
+	pm.ServeHTTP(w, r)
+	if w.Code != 301 {
 		t.Errorf(err)
 	}
-	if brw.Header().Get("Location") != "http://test.com/path/to/handler" {
+	if w.Header().Get("Location") != "http://test.com/path/to/handler" {
 		t.Errorf(err)
 	}
 
 	// Test not found
-	brw = &BufResponseWriter{new(bytes.Buffer), 0, http.Header{}}
+	w = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "http://test.com/nonexistent", nil)
-	pm.ServeHTTP(brw, r)
-	if brw.status != 404 {
+	pm.ServeHTTP(w, r)
+	if w.Code != 404 {
 		t.Errorf(err)
 	}
 
 	// Test not implemented
-	brw = &BufResponseWriter{new(bytes.Buffer), 0, http.Header{}}
+	w = httptest.NewRecorder()
 	r, _ = http.NewRequest("POST", "http://test.com/path/to/handler", nil)
-	pm.ServeHTTP(brw, r)
-	if brw.status != 501 {
+	pm.ServeHTTP(w, r)
+	if w.Code != 501 {
 		t.Error(err)
 	}
 
 	// Test redirect
-	brw = &BufResponseWriter{new(bytes.Buffer), 0, http.Header{}}
+	w = httptest.NewRecorder()
 	r, _ = http.NewRequest("GET", "http://test.com/path/to/handler/", nil)
 	pm.Strict = false
-	pm.ServeHTTP(brw, r)
-	if brw.status != 301 {
+	pm.ServeHTTP(w, r)
+	if w.Code != 301 {
 		t.Errorf(err)
 	}
-	if brw.Header().Get("Location") != "http://test.com/path/to/handler" {
+	if w.Header().Get("Location") != "http://test.com/path/to/handler" {
 		t.Errorf(err)
 	}
 }

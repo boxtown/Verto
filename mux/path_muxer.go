@@ -358,8 +358,8 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type NotFoundHandler struct{}
 
 func (handler NotFoundHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Not Found.")
 	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprintf(w, "Not Found.")
 }
 
 // NotImplementedHandler is the default http.Handler for Not Implemented responses. Returns a 501 status
@@ -367,8 +367,8 @@ func (handler NotFoundHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 type NotImplementedHandler struct{}
 
 func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Not Implemented.")
 	w.WriteHeader(http.StatusNotImplemented)
+	fmt.Fprintf(w, "Not Implemented.")
 }
 
 // ReirectHandler is the default http.Handler for Redirect responses. Returns a 301 status and redirects
@@ -377,8 +377,8 @@ func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 type RedirectHandler struct{}
 
 func (handler RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Location", r.URL.String())
 	w.WriteHeader(http.StatusMovedPermanently)
+	w.Header().Set("Location", r.URL.String())
 }
 
 func cleanPath(p string) string {

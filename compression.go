@@ -13,6 +13,10 @@ type compressionWriter struct {
 	http.ResponseWriter
 }
 
+func (w compressionWriter) Header() http.Header {
+	return w.ResponseWriter.Header()
+}
+
 func (w compressionWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
