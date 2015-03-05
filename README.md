@@ -69,7 +69,7 @@ normal `http.Handler`.
     v.RegisterHandler("PUT", "/path/to/2", endpoint2)
   ```
   
-Verto also the option to include named parameters in the path. Named parameters can also
+Verto also includes the option for named parameters in the path. Named parameters can 
 be more strictly defined using regular expressions. Named parameters will be injected into  
 `r.URL.Query()` and, if the endpoint is a `ResourceFunc`, will be retrievable through the  
 [Context](#context) utility functions.  
@@ -77,7 +77,7 @@ be more strictly defined using regular expressions. Named parameters will be inj
   ```Go
     // Named routing example
     endpoint1 := verto.ResourceFunc(c *verto.Context) (interface{}, error) {
-      fmt.Fprintf(c.Response, c.Params.Get("param"))
+      fmt.Fprintf(c.Response, c.Get("param"))
     })
     endpoint2 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
       fmt.Fprintf(w, r.URL.Query().Get("param"))
@@ -96,7 +96,7 @@ be more strictly defined using regular expressions. Named parameters will be inj
 If a path contains extraneous symbols like extra /'s or .'s (barring trailing /'s), Verto will automatically
 clean the path and send a redirect response to the cleaned path. By default, Verto will not attempt to redirect
 paths with (without) trailing slashes if the other exists. Calling `SetStrict(false)` on a Verto instance
-lets Verto know that you want it to redirect if possible trailing slashes.
+lets Verto know that you want it to redirect trailing slashes.
   
 ### Middleware Chaining  
   
@@ -167,7 +167,7 @@ setting and retrieval.
       Logger Logger
       
       // Injections
-      Injections map[string]interface{}
+      Injections *Injections
     }
     
     // Retrieves the first string value associated with the key. Throws an
