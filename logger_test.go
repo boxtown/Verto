@@ -8,6 +8,82 @@ import (
 	"testing"
 )
 
+func TestLoggerPrinting(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			t.Errorf(err.(error).Error())
+		}
+	}()
+
+	l := NewLogger()
+	defer l.Close()
+
+	msg := "test"
+
+	for i := 0; i < 10; i++ {
+		key := strconv.FormatInt(int64(i), 10)
+		l.subscribers[key] = make(chan string)
+		go func() {
+			for {
+				<-l.subscribers[key]
+			}
+		}()
+	}
+
+	for i := 0; i < 10; i++ {
+		r, w, e := os.Pipe()
+		if e != nil {
+			t.Errorf(e.Error())
+		}
+		defer r.Close()
+
+		l.files = append(l.files, w)
+	}
+
+	e := l.Info(msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Debug(msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Warn(msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Error(msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Print(msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+
+	e = l.Infof("%s", msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Debugf("%s", msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Warnf("%s", msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Errorf("%s", msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	e = l.Printf("%s", msg)
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+}
+
 func TestLoggerAddSubscriber(t *testing.T) {
 	defer func() {
 		err := recover()
@@ -52,6 +128,7 @@ func TestLoggerAddFile(t *testing.T) {
 	if e != nil {
 		t.Errorf(e.Error())
 	}
+	defer r.Close()
 
 	l.AddFile(w)
 	l.Printf("test")

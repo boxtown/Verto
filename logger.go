@@ -10,10 +10,17 @@ import (
 
 // Logger is the interface for Verto Logging.
 type Logger interface {
-	Info(format string, v ...interface{}) error
-	Debug(format string, v ...interface{}) error
-	Warn(format string, v ...interface{}) error
-	Error(format string, v ...interface{}) error
+	Info(v ...interface{}) error
+	Debug(v ...interface{}) error
+	Warn(v ...interface{}) error
+	Error(v ...interface{}) error
+
+	Infof(format string, v ...interface{}) error
+	Debugf(format string, v ...interface{}) error
+	Warnf(format string, v ...interface{}) error
+	Errorf(format string, v ...interface{}) error
+
+	Print(v ...interface{}) error
 	Printf(format string, v ...interface{}) error
 
 	AddSubscriber(key string) <-chan string
@@ -85,50 +92,99 @@ func (vl *VertoLogger) Close() error {
 		}
 	}
 
+	for _, v := range vl.subscribers {
+		close(v)
+	}
+
 	return errors.New(buf.String())
 }
 
 // Info prints an info level message to all subscribers and open
 // log files. Info returns an error if there was an error printing.
-func (vl *VertoLogger) Info(format string, v ...interface{}) error {
+func (vl *VertoLogger) Info(v ...interface{}) error {
 	prefix := "[INFO]"
-	return vl.printf(prefix, format, v...)
+	return vl.print(prefix, v...)
 }
 
 // Debug prints a debug level message to all subscribers and open
 // log files. Debug returns an error if there was an error printing.
-func (vl *VertoLogger) Debug(format string, v ...interface{}) error {
+func (vl *VertoLogger) Debug(v ...interface{}) error {
 	prefix := "[DEBUG]"
-	return vl.printf(prefix, format, v...)
+	return vl.print(prefix, v...)
 }
 
-// Warm prints a warn level message to all subscribers and open
+// Warn prints a warn level message to all subscribers and open
 // log files. Warn returns an error if there was an error printing.
-func (vl *VertoLogger) Warn(format string, v ...interface{}) error {
+func (vl *VertoLogger) Warn(v ...interface{}) error {
 	prefix := "[WARN]"
-	return vl.printf(prefix, format, v...)
+	return vl.print(prefix, v...)
 }
 
 // Error prints an error level message to all subscribers and open
 // log files. Error returns an error if there was an error printing.
-func (vl *VertoLogger) Error(format string, v ...interface{}) error {
+func (vl *VertoLogger) Error(v ...interface{}) error {
+	prefix := "[ERROR]"
+	return vl.print(prefix, v...)
+}
+
+// Infof prints a formatted info level message to all subscribers and open
+// log files. Info returns an error if there was an error printing.
+func (vl *VertoLogger) Infof(format string, v ...interface{}) error {
+	prefix := "[INFO]"
+	return vl.printf(prefix, format, v...)
+}
+
+// Debugf prints a formatted debug level message to all subscribers and open
+// log files. Debug returns an error if there was an error printing.
+func (vl *VertoLogger) Debugf(format string, v ...interface{}) error {
+	prefix := "[DEBUG]"
+	return vl.printf(prefix, format, v...)
+}
+
+// Warnf prints a formatted warn level message to all subscribers and open
+// log files. Warn returns an error if there was an error printing.
+func (vl *VertoLogger) Warnf(format string, v ...interface{}) error {
+	prefix := "[WARN]"
+	return vl.printf(prefix, format, v...)
+}
+
+// Errorf prints a formmated error level message to all subscribers and open
+// log files. Error returns an error if there was an error printing.
+func (vl *VertoLogger) Errorf(format string, v ...interface{}) error {
 	prefix := "[ERROR]"
 	return vl.printf(prefix, format, v...)
 }
 
-// Printf prints a message to all subscribers and open
+// Print prints a message to all subscribers and open
+// log files. Print returns an error if there was an error printing.
+func (vl *VertoLogger) Print(v ...interface{}) error {
+	return vl.print("", v...)
+}
+
+// Printf prints a formatted message to all subscribers and open
 // log files. Printf returns an error if there was an error printing.
 func (vl *VertoLogger) Printf(format string, v ...interface{}) error {
 	return vl.printf("", format, v...)
 }
 
-func (vl *VertoLogger) printf(prefix, format string, v ...interface{}) error {
-	var errBuf bytes.Buffer
+// Prints a message to all subscribers and open log files.
+// Returns an error if there was an error printing.
+func (vl *VertoLogger) print(prefix string, v ...interface{}) error {
 	var buf bytes.Buffer
-	buf.WriteString(time.Now().String())
-	buf.WriteString(": ")
-	buf.WriteString(prefix)
-	buf.WriteString(" ")
+	vl.appendPrefix(prefix, buf)
+
+	buf.WriteString(fmt.Sprint(v))
+
+	msg := buf.String()
+
+	vl.pushToSubs(msg)
+	return vl.writeToFiles(msg)
+}
+
+// Prints a formatted message.
+func (vl *VertoLogger) printf(prefix, format string, v ...interface{}) error {
+	var buf bytes.Buffer
+	vl.appendPrefix(prefix, buf)
 
 	if len(v) > 0 {
 		buf.WriteString(fmt.Sprintf(format, v))
@@ -138,9 +194,29 @@ func (vl *VertoLogger) printf(prefix, format string, v ...interface{}) error {
 
 	msg := buf.String()
 
+	vl.pushToSubs(msg)
+	return vl.writeToFiles(msg)
+}
+
+// Appends a prefix consisting of the current time and the passed in prefix
+// to a byte Buffer. Assumes the buffer is valid (not nil).
+func (vl *VertoLogger) appendPrefix(prefix string, buf bytes.Buffer) {
+	buf.WriteString(time.Now().String())
+	buf.WriteString(": ")
+	buf.WriteString(prefix)
+	buf.WriteString(" ")
+}
+
+// Pushes a string message to all subscribers.
+func (vl *VertoLogger) pushToSubs(msg string) {
 	for _, s := range vl.subscribers {
 		s <- msg
 	}
+}
+
+// Writes a string message to all open log files.
+func (vl *VertoLogger) writeToFiles(msg string) error {
+	var errBuf bytes.Buffer
 
 	for _, f := range vl.files {
 		_, err := f.WriteString(msg)
