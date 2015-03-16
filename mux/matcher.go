@@ -26,17 +26,49 @@ var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 
 const wcStr string = "*"
 
-// Interface for a matcher that matches method+paths to objects.
-type Matcher interface {
-	// Add an object to the matcher registered to the method and path.
-	Add(method, path string, object interface{})
+// Interface for returning results from the matcher
+type Results interface {
+	// Returns the resulting data from the path match
+	Data() interface{}
 
-	// Attempt to match a method and patch to an object.
-	Match(method, path string) (interface{}, url.Values, error)
+	// Returns any path parameters encountered while searching.
+	Values() url.Values
+
+	// Returns the path leading to this results object.
+	Path() string
+}
+
+// Interface for a matcher that matches paths to objects.
+type Matcher interface {
+	// Add an object to the matcher registered to the path.
+	Add(path string, object interface{})
+
+	// Attempt to match a path to an object.
+	Match(path string) (Results, error)
+
+	MatchPrefix(prefix string) Results
+}
+
+type matcherResults struct {
+	data   interface{}
+	values url.Values
+	path   string
+}
+
+func (mr *matcherResults) Data() interface{} {
+	return mr.data
+}
+
+func (mr *matcherResults) Values() url.Values {
+	return mr.values
+}
+
+func (mr *matcherResults) Path() string {
+	return mr.path
 }
 
 type matcherNode struct {
-	data     map[string]interface{}
+	data     interface{}
 	parent   *matcherNode
 	children map[string]*matcherNode
 
@@ -46,14 +78,12 @@ type matcherNode struct {
 
 func newMatcherNode() *matcherNode {
 	return &matcherNode{
-		data:     make(map[string]interface{}),
 		children: make(map[string]*matcherNode),
 	}
 }
 
-// Add an object to a nodes data map by recursively traversing the path
-// and node tree.
-func (n *matcherNode) add(method string, path []string, object interface{}) {
+// Add an object to a nodes data map by recursively traversing the node tree.
+func (n *matcherNode) add(path []string, object interface{}) {
 
 	node := n
 	child := node
@@ -102,17 +132,18 @@ func (n *matcherNode) add(method string, path []string, object interface{}) {
 		node = child
 	}
 
-	node.data[method] = object
+	node.data = object
 }
 
-// Attempt to match a method and path to an object by recursively traversing
-// the path and node tree.
-func (n *matcherNode) match(method string, path []string) (interface{}, url.Values, error) {
+// Attempt to match a path to an object by recursively traversing
+// the node tree.
+func (n *matcherNode) match(path []string) (Results, error) {
 
 	node := n
 	child := node
 	exists := false
-	params := url.Values{}
+
+	results := &matcherResults{values: url.Values{}}
 
 	for i := 0; i < len(path); i++ {
 		segment := path[i]
@@ -123,41 +154,76 @@ func (n *matcherNode) match(method string, path []string) (interface{}, url.Valu
 			if i > 0 && i == len(path)-1 && segment == "" {
 				// Handle trailing slash
 
-				if _, exists := node.parent.children[path[i-1]].data[method]; exists {
-					return nil, nil, ErrRedirectSlash
+				if node.parent.children[path[i-1]].data != nil {
+					return nil, ErrRedirectSlash
 				}
-				return nil, nil, ErrNotFound
+				return nil, ErrNotFound
 			}
 
 			child, exists = node.children[wcStr]
 			if !exists {
 				// No wildcard
 
-				return nil, nil, ErrNotFound
+				return nil, ErrNotFound
 			}
 			if child.regex != nil && !child.regex.MatchString(segment) {
 				// Regex but segment doesn't match.
 
-				return nil, nil, ErrNotFound
+				return nil, ErrNotFound
 			}
 
-			params.Add(child.wildcard, segment)
+			results.values.Add(child.wildcard, segment)
 		}
 
 		node = child
 	}
 
-	data, ok := node.data[method]
-	if !ok {
+	if node.data == nil {
 		if child, exists := node.children[""]; exists {
-			if _, exists = child.data[method]; exists {
-				return nil, nil, ErrRedirectSlash
+			if child.data != nil {
+				return nil, ErrRedirectSlash
 			}
 		}
 
-		return nil, nil, ErrNotImplemented
+		return nil, ErrNotImplemented
 	}
-	return data, params, nil
+
+	results.data = node.data
+
+	return results, nil
+}
+
+func (n *matcherNode) matchPrefix(prefix []string) Results {
+
+	node := n
+	child := node
+	exists := false
+
+	results := &matcherResults{values: url.Values{}}
+
+	for i := 0; i < len(prefix); i++ {
+		segment := prefix[i]
+		child, exists = node.children[segment]
+		if !exists {
+
+			child, exists = node.children[wcStr]
+			if !exists {
+				results.data = node.data
+				return results
+			}
+			if child.regex != nil && !child.regex.MatchString(segment) {
+				results.data = node.data
+				return results
+			}
+
+			results.values.Add(child.wildcard, segment)
+		}
+
+		node = child
+	}
+
+	results.data = node.data
+	return results
 }
 
 // Default Matcher implementation.
@@ -165,7 +231,7 @@ type DefaultMatcher struct {
 	root *matcherNode
 }
 
-func (m *DefaultMatcher) Add(method, path string, object interface{}) {
+func (m *DefaultMatcher) Add(path string, object interface{}) {
 	if m.root == nil {
 		m.root = newMatcherNode()
 	}
@@ -178,12 +244,12 @@ func (m *DefaultMatcher) Add(method, path string, object interface{}) {
 		path_split = path_split[1:]
 	}
 
-	m.root.add(method, path_split, object)
+	m.root.add(path_split, object)
 }
 
-func (m *DefaultMatcher) Match(method, path string) (interface{}, url.Values, error) {
+func (m *DefaultMatcher) Match(path string) (Results, error) {
 	if m.root == nil {
-		return nil, nil, ErrNotFound
+		return nil, ErrNotFound
 	}
 
 	path_split := strings.Split(path, "/")
@@ -194,5 +260,22 @@ func (m *DefaultMatcher) Match(method, path string) (interface{}, url.Values, er
 		path_split = path_split[1:]
 	}
 
-	return m.root.match(method, path_split)
+	return m.root.match(path_split)
+}
+
+func (m *DefaultMatcher) MatchPrefix(prefix string) Results {
+	if m.root == nil {
+		return &matcherResults{}
+	}
+
+	prefix_split := strings.Split(prefix, "/")
+
+	// Need this because splitting an empty string
+	// returns a len 1 slice for some reason
+
+	if len(prefix_split) > 0 && len(prefix_split[0]) == 0 {
+		prefix_split = prefix_split[1:]
+	}
+
+	return m.root.matchPrefix(prefix_split)
 }

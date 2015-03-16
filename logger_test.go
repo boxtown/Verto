@@ -97,18 +97,35 @@ func TestLoggerAddSubscriber(t *testing.T) {
 	l := NewLogger()
 	defer l.Close()
 
+	dropMap := make(map[string]chan bool)
+
 	for i := 0; i < 10; i++ {
-		c := l.AddSubscriber(strconv.FormatInt(int64(i), 10))
+
+		k := strconv.FormatInt(int64(i), 10)
+		c := l.AddSubscriber(k)
+		dropMap[k] = make(chan bool)
+
 		go func() {
 			s := <-c
 			test := getMessage(s)
 			if test != "test" {
-				t.Errorf(err)
+				dropMap[k] <- true
+			} else {
+				dropMap[k] <- false
 			}
 		}()
 	}
 
 	l.Printf("test")
+
+	for k, v := range dropMap {
+		if <-v {
+			dropped := l.Dropped(k)
+			if getMessage(dropped[0]) != "test" {
+				t.Errorf(err)
+			}
+		}
+	}
 }
 
 func TestLoggerAddFile(t *testing.T) {

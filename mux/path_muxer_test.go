@@ -7,279 +7,6 @@ import (
 	"testing"
 )
 
-func TestPluginRun(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed to run."
-	tVal := ""
-	tVal2 := ""
-
-	h := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		tVal = "A"
-		next(w, r)
-	})
-
-	h2 := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		tVal2 = "B"
-	})
-
-	p := &plugin{}
-	p2 := &plugin{}
-
-	p.handler = h
-	p2.handler = h2
-	p.next = p2
-
-	p.run(nil, nil)
-	if tVal != "A" {
-		t.Errorf(err)
-	} else if tVal2 != "B" {
-		t.Errorf(err)
-	}
-}
-
-func TestPluginsUse(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed to use."
-	tVal := ""
-	tVal2 := ""
-
-	h := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		tVal = "A"
-		next(w, r)
-	})
-
-	h2 := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		tVal2 = "B"
-	})
-
-	p := newPlugins()
-	p.use(h)
-	if p.length != 1 {
-		t.Errorf(err)
-	}
-	if p.head != p.tail {
-		t.Errorf(err)
-	}
-
-	p.use(h2)
-	if p.length != 2 {
-		t.Errorf(err)
-	}
-	if p.head == p.tail {
-		t.Errorf(err)
-	}
-	p.run(nil, nil)
-
-	if tVal != "A" {
-		t.Errorf(err)
-	}
-
-	if tVal2 != "B" {
-		t.Errorf(err)
-	}
-}
-
-func TestPluginsPopHead(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed pop head."
-	p := newPlugins()
-
-	// Test empty pop
-	p.popHead()
-	if p.head != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail != emptyPlugin {
-		t.Errorf(err)
-	}
-
-	h := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {})
-
-	// Test pop one
-	p.use(h)
-	p.popHead()
-	if p.head != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail != emptyPlugin {
-		t.Errorf(err)
-	}
-
-	// Test pop multiple
-	p.use(h)
-	p.use(h)
-	p.popHead()
-	if p.head == emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail == emptyPlugin {
-		t.Errorf(err)
-	}
-}
-
-func TestPluginsPopTail(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed pop tail."
-	p := newPlugins()
-
-	// Test empty pop
-	p.popTail()
-
-	h := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {})
-
-	// Test pop one
-	p.use(h)
-	p.popTail()
-	if p.head != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.length != 0 {
-		t.Errorf(err)
-	}
-}
-
-func TestMuxNodeUse(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed mux node use."
-	tVal := ""
-	tVal2 := ""
-	tVal3 := ""
-
-	m := NewMuxNode()
-	m.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tVal = "end"
-	})
-
-	// Test use one
-	m.Use(PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		tVal2 = "A"
-		next(w, r)
-	}))
-	m.chain.run(nil, nil)
-
-	if tVal != "end" {
-		t.Errorf(err)
-	}
-	if tVal2 != "A" {
-		t.Errorf(err)
-	}
-
-	tVal = ""
-	tVal2 = ""
-
-	// Test use multiple
-	m.Use(PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		tVal3 = "B"
-		next(w, r)
-	}))
-	m.chain.run(nil, nil)
-
-	if tVal != "end" {
-		t.Errorf(err)
-	}
-	if tVal2 != "A" {
-		t.Errorf(err)
-	}
-	if tVal3 != "B" {
-		t.Errorf(err)
-	}
-
-	// Test ordering of plugins
-	m = NewMuxNode()
-	m.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		if v := q.Get("one"); v != "A" {
-			t.Errorf(err)
-		}
-
-		if v := q.Get("two"); v != "B" {
-			t.Errorf(err)
-		}
-	})
-
-	m.Use(PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		q := r.URL.Query()
-		q.Set("one", "A")
-		r.URL.RawQuery = q.Encode()
-		next(w, r)
-	}))
-
-	m.Use(PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		q := r.URL.Query()
-		if v := q.Get("one"); v != "A" {
-			t.Errorf(err)
-		}
-
-		q.Set("two", "B")
-		r.URL.RawQuery = q.Encode()
-		next(w, r)
-	}))
-	r, _ := http.NewRequest("GET", "http://test.com/", nil)
-	m.chain.run(nil, r)
-}
-
-func TestMuxNodeUseHandler(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed use handler."
-	tVal := ""
-	tVal2 := ""
-
-	m := NewMuxNode()
-	m.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tVal = "end"
-	})
-	m.UseHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tVal2 = "A"
-	}))
-	m.chain.run(nil, nil)
-
-	if tVal != "end" {
-		t.Errorf(err)
-	}
-	if tVal2 != "A" {
-		t.Errorf(err)
-	}
-}
-
 func TestPathMuxerFind(t *testing.T) {
 	defer func() {
 		err := recover()
@@ -290,36 +17,23 @@ func TestPathMuxerFind(t *testing.T) {
 
 	err := "Failed find."
 	pm := New()
-	m := NewMuxNode()
+	m := newMuxNode(nil, "")
 
 	// Test basic find
-	pm.matcher.Add("GET", "/path/to/handler", m)
-	node, _, _ := pm.find("GET", "/path/to/handler")
+	pm.nodes.Add("/path/to/handler", m)
+	node, _, _ := pm.findNode("/path/to/handler")
 	if node != m {
 		t.Errorf(err)
 	}
 
-	// Test find with non-MuxNode
-	pm.matcher.Add("GET", "/path/to/badnode", "A")
-	_, _, e := pm.find("GET", "/path/to/badnode")
-	if e != ErrNotFound {
-		t.Errorf(err)
-	}
-
 	// Test not found
-	_, _, e = pm.find("GET", "/path/to/nf")
+	_, _, e := pm.findNode("/path/to/nf")
 	if e != ErrNotFound {
-		t.Errorf(e.Error())
-	}
-
-	// Test not implemented
-	_, _, e = pm.find("POST", "/path/to/handler")
-	if e != ErrNotImplemented {
 		t.Errorf(e.Error())
 	}
 
 	// Test redirect
-	_, _, e = pm.find("GET", "/path/to/handler/")
+	_, _, e = pm.findNode("/path/to/handler/")
 	if e != ErrRedirectSlash {
 		t.Errorf(e.Error())
 	}
@@ -344,8 +58,8 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "A"
 		},
 	))
-	n, _, _ := pm.find("GET", "/path/to/handler")
-	n.handler.ServeHTTP(nil, nil)
+	n, _, _ := pm.findNode("/path/to/handler")
+	n.handlers["GET"].ServeHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -356,8 +70,8 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "B"
 		},
 	))
-	n, _, _ = pm.find("GET", "/path/to/handler")
-	n.handler.ServeHTTP(nil, nil)
+	n, _, _ = pm.findNode("/path/to/handler")
+	n.handlers["GET"].ServeHTTP(nil, nil)
 	if tVal != "B" {
 		t.Errorf(err)
 	}
@@ -379,8 +93,8 @@ func TestPathMuxerAddFunc(t *testing.T) {
 	pm.AddFunc("GET", "/path/to/handler", func(w http.ResponseWriter, r *http.Request) {
 		tVal = "A"
 	})
-	n, _, _ := pm.find("GET", "/path/to/handler")
-	n.handler.ServeHTTP(nil, nil)
+	n, _, _ := pm.findNode("/path/to/handler")
+	n.handlers["GET"].ServeHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}

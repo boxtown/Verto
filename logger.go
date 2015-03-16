@@ -27,12 +27,15 @@ type Logger interface {
 	AddFile(f *os.File) error
 	AddFilePath(path string) error
 
+	Dropped(key string) []string
+
 	Close() error
 }
 
 // VertoLogger is the Verto default implementation of verto.Logger.
 type VertoLogger struct {
 	subscribers map[string]chan string
+	dropped     map[string][]string
 	files       []*os.File
 }
 
@@ -40,6 +43,7 @@ type VertoLogger struct {
 func NewLogger() *VertoLogger {
 	return &VertoLogger{
 		subscribers: make(map[string]chan string),
+		dropped:     make(map[string][]string),
 		files:       make([]*os.File, 0),
 	}
 }
@@ -50,6 +54,7 @@ func NewLogger() *VertoLogger {
 // it will be OVERWRITTEN.
 func (vl *VertoLogger) AddSubscriber(key string) <-chan string {
 	vl.subscribers[key] = make(chan string)
+	vl.dropped[key] = make([]string, 0)
 	return vl.subscribers[key]
 }
 
@@ -79,6 +84,13 @@ func (vl *VertoLogger) AddFilePath(path string) error {
 	return nil
 }
 
+// Dropped returns a slice of strings representing
+// any dropped log messages due to timeout sends to
+// the subscriber described by key.
+func (vl *VertoLogger) Dropped(key string) []string {
+	return vl.dropped[key]
+}
+
 // Close attempts to close all opened files attached to VertoLogger.
 // Errors are recorded and combined into one single error so that an
 // error doesn't prevent the closing of other files.
@@ -103,77 +115,78 @@ func (vl *VertoLogger) Close() error {
 // log files. Info returns an error if there was an error printing.
 func (vl *VertoLogger) Info(v ...interface{}) error {
 	prefix := "[INFO]"
-	return vl.print(prefix, v...)
+	return vl.lprint(prefix, v...)
 }
 
 // Debug prints a debug level message to all subscribers and open
 // log files. Debug returns an error if there was an error printing.
 func (vl *VertoLogger) Debug(v ...interface{}) error {
 	prefix := "[DEBUG]"
-	return vl.print(prefix, v...)
+	return vl.lprint(prefix, v...)
 }
 
 // Warn prints a warn level message to all subscribers and open
 // log files. Warn returns an error if there was an error printing.
 func (vl *VertoLogger) Warn(v ...interface{}) error {
 	prefix := "[WARN]"
-	return vl.print(prefix, v...)
+	return vl.lprint(prefix, v...)
 }
 
 // Error prints an error level message to all subscribers and open
 // log files. Error returns an error if there was an error printing.
 func (vl *VertoLogger) Error(v ...interface{}) error {
 	prefix := "[ERROR]"
-	return vl.print(prefix, v...)
+	return vl.lprint(prefix, v...)
 }
 
 // Infof prints a formatted info level message to all subscribers and open
 // log files. Info returns an error if there was an error printing.
 func (vl *VertoLogger) Infof(format string, v ...interface{}) error {
 	prefix := "[INFO]"
-	return vl.printf(prefix, format, v...)
+	return vl.lprintf(prefix, format, v...)
 }
 
 // Debugf prints a formatted debug level message to all subscribers and open
 // log files. Debug returns an error if there was an error printing.
 func (vl *VertoLogger) Debugf(format string, v ...interface{}) error {
 	prefix := "[DEBUG]"
-	return vl.printf(prefix, format, v...)
+	return vl.lprintf(prefix, format, v...)
 }
 
 // Warnf prints a formatted warn level message to all subscribers and open
 // log files. Warn returns an error if there was an error printing.
 func (vl *VertoLogger) Warnf(format string, v ...interface{}) error {
 	prefix := "[WARN]"
-	return vl.printf(prefix, format, v...)
+	return vl.lprintf(prefix, format, v...)
 }
 
 // Errorf prints a formmated error level message to all subscribers and open
 // log files. Error returns an error if there was an error printing.
 func (vl *VertoLogger) Errorf(format string, v ...interface{}) error {
 	prefix := "[ERROR]"
-	return vl.printf(prefix, format, v...)
+	return vl.lprintf(prefix, format, v...)
 }
 
 // Print prints a message to all subscribers and open
 // log files. Print returns an error if there was an error printing.
 func (vl *VertoLogger) Print(v ...interface{}) error {
-	return vl.print("", v...)
+	return vl.lprint("", v...)
 }
 
 // Printf prints a formatted message to all subscribers and open
 // log files. Printf returns an error if there was an error printing.
 func (vl *VertoLogger) Printf(format string, v ...interface{}) error {
-	return vl.printf("", format, v...)
+	return vl.lprintf("", format, v...)
 }
 
 // Prints a message to all subscribers and open log files.
 // Returns an error if there was an error printing.
-func (vl *VertoLogger) print(prefix string, v ...interface{}) error {
+func (vl *VertoLogger) lprint(prefix string, v ...interface{}) error {
 	var buf bytes.Buffer
-	vl.appendPrefix(prefix, buf)
+	vl.appendPrefix(prefix, &buf)
 
 	buf.WriteString(fmt.Sprint(v))
+	buf.WriteString("\n")
 
 	msg := buf.String()
 
@@ -182,15 +195,16 @@ func (vl *VertoLogger) print(prefix string, v ...interface{}) error {
 }
 
 // Prints a formatted message.
-func (vl *VertoLogger) printf(prefix, format string, v ...interface{}) error {
+func (vl *VertoLogger) lprintf(prefix, format string, v ...interface{}) error {
 	var buf bytes.Buffer
-	vl.appendPrefix(prefix, buf)
+	vl.appendPrefix(prefix, &buf)
 
 	if len(v) > 0 {
 		buf.WriteString(fmt.Sprintf(format, v))
 	} else {
 		buf.WriteString(fmt.Sprint(format))
 	}
+	buf.WriteString("\n")
 
 	msg := buf.String()
 
@@ -200,7 +214,7 @@ func (vl *VertoLogger) printf(prefix, format string, v ...interface{}) error {
 
 // Appends a prefix consisting of the current time and the passed in prefix
 // to a byte Buffer. Assumes the buffer is valid (not nil).
-func (vl *VertoLogger) appendPrefix(prefix string, buf bytes.Buffer) {
+func (vl *VertoLogger) appendPrefix(prefix string, buf *bytes.Buffer) {
 	buf.WriteString(time.Now().String())
 	buf.WriteString(": ")
 	buf.WriteString(prefix)
@@ -209,8 +223,13 @@ func (vl *VertoLogger) appendPrefix(prefix string, buf bytes.Buffer) {
 
 // Pushes a string message to all subscribers.
 func (vl *VertoLogger) pushToSubs(msg string) {
-	for _, s := range vl.subscribers {
-		s <- msg
+	for k, s := range vl.subscribers {
+		select {
+		case s <- msg:
+			break
+		case <-time.After(500 * time.Millisecond):
+			vl.dropped[k] = append(vl.dropped[k], msg)
+		}
 	}
 }
 
