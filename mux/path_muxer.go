@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"sync"
 )
 
@@ -26,6 +27,7 @@ type PathMuxer struct {
 	chainLock *sync.RWMutex
 	nodes     Matcher
 	groups    Matcher
+	prefix    string
 
 	NotFound       http.Handler
 	NotImplemented http.Handler
@@ -59,8 +61,9 @@ func New() *PathMuxer {
 // and returns the endpoint node.
 func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 	path = cleanPath(path)
+	searchPath := getSearchPath(path)
 
-	node, _, err := mux.findNode(path)
+	node, _, err := mux.findNode(searchPath, false)
 	if err != nil {
 		node = newMuxNode(mux, path)
 		node.handlers[method] = handler
@@ -69,7 +72,12 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 		node.handlers[method] = handler
 	}
 
-	return node
+	return &nodeImpl{
+		chainLock: node.chainLock,
+		method:    method,
+		chains:    node.chains,
+		handlers:  node.handlers,
+	}
 }
 
 // AddFunc wraps f as an http.Handler and set is as handler for a specific method+path
@@ -78,6 +86,26 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 
 	return mux.Add(method, path, http.Handler(http.HandlerFunc(f)))
 }
+
+/* func (mux *PathMuxer) Group(path string) {
+	group := mux.findGroup(path)
+	if group != nil && group.prefix == path {
+		return
+	}
+
+	group = New()
+	group.prefix = path
+
+	subNodes := mux.nodes.PrefixMatch(path)
+	subGroups := mux.groups.PrefixMatch(path)
+
+	for _, n := range subNodes {
+
+	}
+	for _, g := range subGroups {
+
+	}
+} */
 
 // Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
@@ -114,7 +142,7 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	node, params, err := mux.findNode(r.URL.Path)
+	node, params, chain, err := mux.find(r.URL.Path)
 	if err == ErrNotFound {
 		mux.NotFound.ServeHTTP(w, r)
 		return
@@ -136,29 +164,96 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.chainLock.RLock()
 	defer mux.chainLock.RUnlock()
 
-	chainCpy := mux.chain.deepCopy()
-	chainCpy.use(PluginFunc(
-		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-			node.chainLock.RLock()
-			defer node.chainLock.RUnlock()
-
-			if node.chain == nil || node.chain.length == 0 {
+	if chain != nil {
+		chain.use(PluginFunc(
+			func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 				node.ServeHTTP(w, r)
-			} else {
-				node.chain.run(w, r)
-			}
-		},
-	))
-	chainCpy.run(w, r)
+			},
+		))
+		chain.run(w, r)
+	} else {
+		node.ServeHTTP(w, r)
+	}
 }
 
-// FindNode finds and returns the node associated with the path
+// find attempts to find the node and aggregate values and plugins for the node at
+// path by first recursively searching subgroups and then attempting to find the node
+// directly. find returns an error if any is encountered while searching. For each
+// subgroup found, find makes a copy of the plugin chain and links together these
+// chains so that they run in the correct order. The average run time is
+// O(m * n) where m is the average length of a plugin chain and n the average
+// length of a path.
+func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) {
+	path = strings.TrimPrefix(path, mux.prefix)
+
+	// Attempt to find by subgroup
+	sub := mux.findGroup(path)
+	if sub != nil {
+		node, values, chain, err := sub.find(path)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		// Subgroup found, if subchain exists, set return
+		// chain to sub chain
+		if sub.chain != nil && sub.chain.length > 0 {
+
+			sub.chainLock.RLock()
+			chainCpy := sub.chain.deepCopy()
+			sub.chainLock.RUnlock()
+
+			if chain != nil && chain.length > 0 {
+				chainCpy.link(chain)
+			}
+			chain = chainCpy
+		}
+
+		// Set current mux's chain as first then subchain as next
+		// if current mux's chain exists
+		if mux.chain != nil && mux.chain.length > 0 {
+			mux.chainLock.RLock()
+			chainCpy := mux.chain.deepCopy()
+			mux.chainLock.RUnlock()
+
+			if chain != nil && chain.length > 0 {
+				chainCpy.link(chain)
+			}
+			chain = chainCpy
+		}
+		return node, values, chain, nil
+	}
+
+	node, values, err := mux.findNode(path, true)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	mux.chainLock.RLock()
+	chain := mux.chain.deepCopy()
+	mux.chainLock.RUnlock()
+
+	return node, values, chain, nil
+}
+
+// findGroup returns the PathMuxer whose path is the longest
+// prefix match of the passed in path or nil if no such
+// muxer exists.
+func (mux *PathMuxer) findGroup(path string) *PathMuxer {
+	results := mux.groups.LongestPrefixMatch(path)
+	if results.Data() == nil {
+		return nil
+	}
+	pm, ok := results.Data().(*PathMuxer)
+	if !ok {
+		return nil
+	}
+	return pm
+}
+
+// findNode finds and returns the node associated with the path
 // plus any wildcard query parameters. Returns ErrNotFound if the
 // path doesn't exist. Returns ErrRedirectSlash if a handler with (without)
 // a trailing slash exists.
-func (mux *PathMuxer) findNode(path string) (*muxNode, url.Values, error) {
-	path = cleanPath(path)
-
+func (mux *PathMuxer) findNode(path string, matchRegex bool) (*muxNode, url.Values, error) {
 	results, err := mux.nodes.Match(path)
 	if err != nil {
 		return nil, nil, err
@@ -235,4 +330,28 @@ func appendParams(query string, params string) string {
 	buf.WriteString("&")
 	buf.WriteString(params)
 	return buf.String()
+}
+
+func getSearchPath(path string) string {
+	pathSplit := strings.Split(path, "/")
+	for i := range pathSplit {
+		if strings.HasPrefix(pathSplit[i], "{") && strings.HasSuffix(pathSplit[i], "}") {
+			pathSplit[i] = wcStr
+		}
+	}
+
+	if len(pathSplit) > 0 && len(pathSplit[0]) == 0 {
+		pathSplit = pathSplit[1:]
+	}
+
+	searchPath := "/"
+	for i := range pathSplit {
+		segment := pathSplit[i]
+		searchPath += segment
+
+		if i < len(pathSplit)-1 {
+			searchPath += "/"
+		}
+	}
+	return searchPath
 }

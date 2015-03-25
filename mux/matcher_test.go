@@ -89,6 +89,32 @@ func TestNodeAdd(t *testing.T) {
 	}
 }
 
+func TestNodeDelete(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			t.Errorf(err.(error).Error())
+		}
+	}()
+
+	n := newMatcherNode()
+
+	// Test delete non-existent
+	err := "Failed delete non-existent."
+	n.add([]string{"root"}, "A")
+	n.delete([]string{"non-existent"})
+	if n.children["root"].data != "A" {
+		t.Errorf(err)
+	}
+
+	// Test delete
+	err = "Failed delete."
+	n.delete([]string{"root"})
+	if n.children["root"].data != nil {
+		t.Errorf(err)
+	}
+}
+
 func TestNodeMatch(t *testing.T) {
 	defer func() {
 		err := recover()
@@ -187,7 +213,7 @@ func TestNodeMatch(t *testing.T) {
 	}
 }
 
-func TestNodeMatchPrefix(t *testing.T) {
+func TestNodeLongestPrefixMatch(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -201,12 +227,12 @@ func TestNodeMatchPrefix(t *testing.T) {
 	err := "Failed match root."
 	p := make([]string, 0)
 	n.add(p, "A")
-	results := n.matchPrefix(p)
+	results := n.longestPrefixMatch(p)
 	if results.Data() != "A" {
 		t.Errorf(err)
 	}
 
-	results = n.matchPrefix([]string{"path"})
+	results = n.longestPrefixMatch([]string{"path"})
 	if results.Data() != "A" {
 		t.Errorf(err)
 	}
@@ -215,15 +241,15 @@ func TestNodeMatchPrefix(t *testing.T) {
 	err = "Failed match child."
 	p = []string{"child"}
 	n.add(p, "B")
-	results = n.matchPrefix(p)
+	results = n.longestPrefixMatch(p)
 	if results.Data() != "B" {
 		t.Errorf(err)
 	}
-	results = n.matchPrefix([]string{"child", "child2"})
+	results = n.longestPrefixMatch([]string{"child", "child2"})
 	if results.Data() != "B" {
 		t.Errorf(err)
 	}
-	results = n.matchPrefix([]string{"non-existent"})
+	results = n.longestPrefixMatch([]string{"non-existent"})
 	if results.Data() != "A" {
 		t.Errorf(err)
 	}
@@ -232,20 +258,65 @@ func TestNodeMatchPrefix(t *testing.T) {
 	err = "Failed match multiple children."
 	p = []string{"child", "child2"}
 	n.add(p, "C")
-	results = n.matchPrefix(p)
+	results = n.longestPrefixMatch(p)
 	if results.Data() != "C" {
 		t.Errorf(err)
 	}
-	results = n.matchPrefix([]string{"child", "child2", "child3"})
+	results = n.longestPrefixMatch([]string{"child", "child2", "child3"})
 	if results.Data() != "C" {
 		t.Errorf(err)
 	}
-	results = n.matchPrefix([]string{"child", "child4", "child3"})
+	results = n.longestPrefixMatch([]string{"child", "child4", "child3"})
 	if results.Data() != "B" {
 		t.Errorf(err)
 	}
-	results = n.matchPrefix([]string{"child5"})
+	results = n.longestPrefixMatch([]string{"child5"})
 	if results.Data() != "A" {
+		t.Errorf(err)
+	}
+}
+
+func TestNodePrefixMatch(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			t.Errorf(err.(error).Error())
+		}
+	}()
+
+	err := "Failed prefix match."
+	n := newMatcherNode()
+
+	p := []string{"path"}
+	n.add(p, "A")
+
+	p = []string{"path", "path2"}
+	n.add(p, "B")
+
+	p = []string{"path", "path3"}
+	n.add(p, "C")
+
+	p = []string{"path4"}
+	n.add(p, "D")
+
+	p = []string{"path4", "path5"}
+	n.add(p, "E")
+
+	// Match none
+	results := n.prefixMatch([]string{"non-existent"})
+	if len(results) > 0 {
+		t.Errorf(err)
+	}
+
+	// Match path 1
+	results = n.prefixMatch([]string{"path"})
+	if len(results) != 3 {
+		t.Errorf(err)
+	}
+
+	// Match path 2
+	results = n.prefixMatch([]string{"path4"})
+	if len(results) != 2 {
 		t.Errorf(err)
 	}
 }
@@ -434,7 +505,7 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	}
 }
 
-func TestDefaultMatcherMatchPrefix(t *testing.T) {
+func TestDefaultMatcherLongestPrefixMatch(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -442,4 +513,53 @@ func TestDefaultMatcherMatchPrefix(t *testing.T) {
 		}
 	}()
 
+	m := &DefaultMatcher{}
+
+	// Test match root
+	err := "Failed match root."
+	m.Add("", "A")
+	results := m.LongestPrefixMatch("")
+	if results.Data() != "A" {
+		t.Errorf(err)
+	}
+	results = m.LongestPrefixMatch("path")
+	if results.Data() != "A" {
+		t.Errorf(err)
+	}
+
+	// Test match child
+	err = "Failed match child."
+	m.Add("/child", "B")
+	results = m.LongestPrefixMatch("/child")
+	if results.Data() != "B" {
+		t.Errorf(err)
+	}
+	results = m.LongestPrefixMatch("/child/child2")
+	if results.Data() != "B" {
+		t.Errorf(err)
+	}
+	results = m.LongestPrefixMatch("/non-existent")
+	if results.Data() != "A" {
+		t.Errorf(err)
+	}
+
+	// Test match multiple children
+	err = "Failed match multiple children."
+	m.Add("/child/child2", "C")
+	results = m.LongestPrefixMatch("/child/child2")
+	if results.Data() != "C" {
+		t.Errorf(err)
+	}
+	results = m.LongestPrefixMatch("/child/child2/child3")
+	if results.Data() != "C" {
+		t.Errorf(err)
+	}
+	results = m.LongestPrefixMatch("/child/child4/child3")
+	if results.Data() != "B" {
+		t.Errorf(err)
+	}
+	results = m.LongestPrefixMatch("/child")
+	if results.Data() != "B" {
+		t.Errorf(err)
+	}
 }

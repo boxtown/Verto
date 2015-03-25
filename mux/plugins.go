@@ -61,6 +61,23 @@ func (p *plugins) deepCopy() *plugins {
 	return cpy
 }
 
+func (p *plugins) link(p2 *plugins) {
+	if p2 == nil {
+		return
+	}
+
+	if p.head == emptyPlugin {
+		p.head = p2.head
+		p.tail = p2.tail
+		p.length = p2.length
+		return
+	}
+
+	p.tail.next = p2.head
+	p2.head.prev = p.tail
+	p.length += p2.length
+}
+
 func (p *plugins) use(handler PluginHandler) {
 	p.length = p.length + 1
 
@@ -70,7 +87,7 @@ func (p *plugins) use(handler PluginHandler) {
 		prev:    emptyPlugin,
 	}
 
-	if p.head == nil || p.head == emptyPlugin {
+	if p.head == emptyPlugin {
 		p.head = plugin
 		p.tail = p.head
 		return
@@ -82,14 +99,14 @@ func (p *plugins) use(handler PluginHandler) {
 }
 
 func (p *plugins) popHead() {
-	if p.head == nil || p.head == emptyPlugin {
+	if p.head == emptyPlugin {
 		return
 	}
 
 	p.length = p.length - 1
 
 	p.head = p.head.next
-	if p.head != nil && p.head != emptyPlugin {
+	if p.head != emptyPlugin {
 		p.head.prev = emptyPlugin
 	} else {
 		p.tail = emptyPlugin
@@ -97,14 +114,14 @@ func (p *plugins) popHead() {
 }
 
 func (p *plugins) popTail() {
-	if p.tail == nil || p.tail == emptyPlugin {
+	if p.tail == emptyPlugin {
 		return
 	}
 
 	p.length = p.length - 1
 
 	p.tail = p.tail.prev
-	if p.tail != nil && p.tail != emptyPlugin {
+	if p.tail != emptyPlugin {
 		p.tail.next = emptyPlugin
 	} else {
 		p.head = emptyPlugin
@@ -112,7 +129,7 @@ func (p *plugins) popTail() {
 }
 
 func (p *plugins) run(w http.ResponseWriter, r *http.Request) {
-	if p.head == nil || p.head == emptyPlugin {
+	if p.head == emptyPlugin {
 		return
 	}
 

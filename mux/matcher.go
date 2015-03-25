@@ -33,9 +33,6 @@ type Results interface {
 
 	// Returns any path parameters encountered while searching.
 	Values() url.Values
-
-	// Returns the path leading to this results object.
-	Path() string
 }
 
 // Interface for a matcher that matches paths to objects.
@@ -43,16 +40,25 @@ type Matcher interface {
 	// Add an object to the matcher registered to the path.
 	Add(path string, object interface{})
 
+	// Deletes the object stored at the node at the path
+	// if it exists.
+	Delete(path string)
+
+	// Returns the object stored at the node with the longest
+	// prefix match.
+	LongestPrefixMatch(path string) Results
+
 	// Attempt to match a path to an object.
 	Match(path string) (Results, error)
 
-	MatchPrefix(prefix string) Results
+	// Returns all non-nil objects that explicitly matches
+	// the prefix.
+	PrefixMatch(prefix string) []interface{}
 }
 
 type matcherResults struct {
 	data   interface{}
 	values url.Values
-	path   string
 }
 
 func (mr *matcherResults) Data() interface{} {
@@ -61,10 +67,6 @@ func (mr *matcherResults) Data() interface{} {
 
 func (mr *matcherResults) Values() url.Values {
 	return mr.values
-}
-
-func (mr *matcherResults) Path() string {
-	return mr.path
 }
 
 type matcherNode struct {
@@ -82,19 +84,17 @@ func newMatcherNode() *matcherNode {
 	}
 }
 
-// Add an object to a nodes data map by recursively traversing the node tree.
+// Add an object to a nodes data map by traversing the node tree.
 func (n *matcherNode) add(path []string, object interface{}) {
 
 	node := n
-	child := node
-	exists := false
 
 	for i := 0; i < len(path); i++ {
 		segment := path[i]
 		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
 			// Path segment is wildcard
 
-			child, exists = node.children[wcStr]
+			child, exists := node.children[wcStr]
 			if !exists {
 				child = newMatcherNode()
 				child.parent = node
@@ -118,92 +118,49 @@ func (n *matcherNode) add(path []string, object interface{}) {
 				}
 			}
 			child.wildcard = expression
+			node = child
 		} else {
 			// Regular case
 
-			child, exists = node.children[segment]
+			child, exists := node.children[segment]
 			if !exists {
 				child = newMatcherNode()
 				child.parent = node
 				node.children[segment] = child
 			}
+			node = child
 		}
-
-		node = child
 	}
 
 	node.data = object
 }
 
-// Attempt to match a path to an object by recursively traversing
-// the node tree.
-func (n *matcherNode) match(path []string) (Results, error) {
+// Deletes the data for the node at path if it exists.
+func (n *matcherNode) delete(path []string) {
 
 	node := n
-	child := node
-	exists := false
-
-	results := &matcherResults{values: url.Values{}}
-
-	for i := 0; i < len(path); i++ {
+	for i := range path {
 		segment := path[i]
-		child, exists = node.children[segment]
+		child, exists := node.children[segment]
 		if !exists {
-			// Path segment not found, check for wildcard or trailing slash
-
-			if i > 0 && i == len(path)-1 && segment == "" {
-				// Handle trailing slash
-
-				if node.parent.children[path[i-1]].data != nil {
-					return nil, ErrRedirectSlash
-				}
-				return nil, ErrNotFound
-			}
-
-			child, exists = node.children[wcStr]
-			if !exists {
-				// No wildcard
-
-				return nil, ErrNotFound
-			}
-			if child.regex != nil && !child.regex.MatchString(segment) {
-				// Regex but segment doesn't match.
-
-				return nil, ErrNotFound
-			}
-
-			results.values.Add(child.wildcard, segment)
+			return
 		}
-
 		node = child
 	}
 
-	if node.data == nil {
-		if child, exists := node.children[""]; exists {
-			if child.data != nil {
-				return nil, ErrRedirectSlash
-			}
-		}
-
-		return nil, ErrNotImplemented
-	}
-
-	results.data = node.data
-
-	return results, nil
+	node.data = nil
 }
 
-func (n *matcherNode) matchPrefix(prefix []string) Results {
+// Returns the results from the longest common prefix match
+func (n *matcherNode) longestPrefixMatch(path []string) Results {
 
 	node := n
-	child := node
-	exists := false
 
 	results := &matcherResults{values: url.Values{}}
 
-	for i := 0; i < len(prefix); i++ {
-		segment := prefix[i]
-		child, exists = node.children[segment]
+	for i := range path {
+		segment := path[i]
+		child, exists := node.children[segment]
 		if !exists {
 
 			child, exists = node.children[wcStr]
@@ -226,6 +183,106 @@ func (n *matcherNode) matchPrefix(prefix []string) Results {
 	return results
 }
 
+// Attempt to match a path to an object by traversing
+// the node tree.
+func (n *matcherNode) match(path []string) (Results, error) {
+
+	node := n
+	results := &matcherResults{values: url.Values{}}
+
+	for i := 0; i < len(path); i++ {
+		segment := path[i]
+		child, exists := node.children[segment]
+		if !exists {
+			// Path segment not found, check for wildcard or trailing slash
+
+			if i > 0 && i == len(path)-1 && segment == "" {
+				// Handle trailing slash
+				redirect, exists := node.parent.children[path[i-1]]
+				if !exists {
+					redirect, exists = node.parent.children[wcStr]
+				}
+
+				if exists {
+					if redirect.data != nil {
+						return nil, ErrRedirectSlash
+					}
+				}
+
+				return nil, ErrNotFound
+			}
+
+			child, exists = node.children[wcStr]
+			if !exists {
+				// No wildcard
+
+				return nil, ErrNotFound
+			}
+			if child.regex != nil && !child.regex.MatchString(segment) {
+				// Regex but segment doesn't match.
+
+				return nil, ErrNotFound
+			}
+			results.values.Add(child.wildcard, segment)
+		}
+		node = child
+	}
+
+	if node.data == nil {
+		if child, exists := node.children[""]; exists {
+			if child.data != nil {
+				return nil, ErrRedirectSlash
+			}
+		}
+
+		return nil, ErrNotFound
+	}
+
+	results.data = node.data
+	return results, nil
+}
+
+// Return non-nil data of any nodes explicitly matching the prefix.
+func (n *matcherNode) prefixMatch(prefix []string) []interface{} {
+	results := make([]interface{}, 0)
+
+	node := n
+	for i := range prefix {
+		segment := prefix[i]
+		child, exists := node.children[segment]
+		if !exists {
+			break
+		}
+		node = child
+	}
+
+	if node != n && len(node.children) > 0 {
+		if node.data != nil {
+			results = append(results, node.data)
+		}
+
+		queue := make([]*matcherNode, 0)
+		for _, v := range node.children {
+			queue = append(queue, v)
+		}
+
+		for len(queue) > 0 {
+			node = queue[0]
+			queue = queue[1:]
+
+			if node.data != nil {
+				results = append(results, node.data)
+			}
+
+			for _, v := range node.children {
+				queue = append(queue, v)
+			}
+		}
+	}
+
+	return results
+}
+
 // Default Matcher implementation.
 type DefaultMatcher struct {
 	root *matcherNode
@@ -236,15 +293,26 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 		m.root = newMatcherNode()
 	}
 
-	path_split := strings.Split(path, "/")
+	pathSplit := m.splitPath(path)
+	m.root.add(pathSplit, object)
+}
 
-	// Need this because splitting an empty string
-	// returns a len 1 slice for some reason
-	if len(path_split) > 0 && len(path_split[0]) == 0 {
-		path_split = path_split[1:]
+func (m *DefaultMatcher) Delete(path string) {
+	if m.root == nil {
+		return
 	}
 
-	m.root.add(path_split, object)
+	pathSplit := m.splitPath(path)
+	m.root.delete(pathSplit)
+}
+
+func (m *DefaultMatcher) LongestPrefixMatch(path string) Results {
+	if m.root == nil {
+		return &matcherResults{}
+	}
+
+	pathSplit := m.splitPath(path)
+	return m.root.longestPrefixMatch(pathSplit)
 }
 
 func (m *DefaultMatcher) Match(path string) (Results, error) {
@@ -252,30 +320,23 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 		return nil, ErrNotFound
 	}
 
-	path_split := strings.Split(path, "/")
-
-	// Need this because splitting an empty string
-	// returns a len 1 slice for some reason
-	if len(path_split) > 0 && len(path_split[0]) == 0 {
-		path_split = path_split[1:]
-	}
-
-	return m.root.match(path_split)
+	pathSplit := m.splitPath(path)
+	return m.root.match(pathSplit)
 }
 
-func (m *DefaultMatcher) MatchPrefix(prefix string) Results {
+func (m *DefaultMatcher) PrefixMatch(prefix string) []interface{} {
 	if m.root == nil {
-		return &matcherResults{}
+		return make([]interface{}, 0)
 	}
 
-	prefix_split := strings.Split(prefix, "/")
+	prefixSplit := m.splitPath(prefix)
+	return m.root.prefixMatch(prefixSplit)
+}
 
-	// Need this because splitting an empty string
-	// returns a len 1 slice for some reason
-
-	if len(prefix_split) > 0 && len(prefix_split[0]) == 0 {
-		prefix_split = prefix_split[1:]
+func (m *DefaultMatcher) splitPath(path string) []string {
+	pathSplit := strings.Split(path, "/")
+	if len(pathSplit) > 0 && len(pathSplit[0]) == 0 {
+		pathSplit = pathSplit[1:]
 	}
-
-	return m.root.matchPrefix(prefix_split)
+	return pathSplit
 }
