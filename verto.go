@@ -1,4 +1,4 @@
-// Package Verto is a simple REST framework. It is
+// Package verto is a simple REST framework. It is
 // plug n' play and includes it's own path
 // multiplexer, error handler, and response
 // handler. It is recommended to bring your
@@ -61,7 +61,7 @@ type Plugin interface {
 	Handle(c *Context, next http.HandlerFunc)
 }
 
-// VertoPluginFunc wraps functions as Verto Plugins
+// PluginFunc wraps functions as Verto Plugins
 type PluginFunc func(c *Context, next http.HandlerFunc)
 
 // Handle calls functions wrapped by VertoPluginFunc.
@@ -147,7 +147,7 @@ func (gw *GroupWrapper) UseVerto(plugin Plugin) *GroupWrapper {
 	return &GroupWrapper{gw.g.Use(mux.PluginFunc(pluginFunc)), gw.v}
 }
 
-// MuxWrapper is a wrapper around mux.Node that allows the use of Verto plugins.
+// NodeWrapper is a wrapper around mux.Node that allows the use of Verto plugins.
 type NodeWrapper struct {
 	n mux.Node
 	v *Verto

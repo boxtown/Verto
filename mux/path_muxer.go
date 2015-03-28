@@ -85,6 +85,10 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 	return mux.Add(method, path, http.Handler(http.HandlerFunc(f)))
 }
 
+// Group creates a route group at path. Any existing
+// groups and nodes with a shared path prefix are subsumed.
+// Attempting to create an existing group returns the existing
+// group.
 func (mux *PathMuxer) Group(path string) Group {
 	path = cleanPath(path)
 	searchPath := cleanWildcards(path)
@@ -199,10 +203,10 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) {
 	path = trimPathPrefix(path, mux.prefix, true)
 
-	var node *muxNode = nil
-	var values url.Values = url.Values{}
-	var chain *plugins = nil
-	var err error = nil
+	var node *muxNode
+	var values = url.Values{}
+	var chain *plugins
+	var err error
 
 	if mux.chain != nil && mux.chain.length > 0 {
 		mux.chainLock.RLock()
@@ -311,7 +315,7 @@ func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 	fmt.Fprintf(w, "Not Implemented.")
 }
 
-// ReirectHandler is the default http.Handler for Redirect responses. Returns a 301 status and redirects
+// RedirectHandler is the default http.Handler for Redirect responses. Returns a 301 status and redirects
 // to the URL stored in r. This handler assumes the necessary adjustments to r.URL
 // have been made prior to calling the handler.
 type RedirectHandler struct{}

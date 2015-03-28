@@ -26,7 +26,7 @@ var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 
 const wcStr string = "*"
 
-// Interface for returning results from the matcher
+// Results is an interface for returning results from the matcher
 type Results interface {
 	// Returns the resulting data from the path match
 	Data() interface{}
@@ -35,7 +35,7 @@ type Results interface {
 	Values() url.Values
 }
 
-// Interface for a matcher that matches paths to objects.
+// Matcher is an interface for a matcher that matches paths to objects.
 type Matcher interface {
 	// Add adds an object to the matcher registered to the path.
 	Add(path string, object interface{})
@@ -109,9 +109,9 @@ func (n *matcherNode) add(path []string, object interface{}) {
 			if strings.Contains(expression, ":") {
 				// Path segment contains regexp
 
-				exp_split := strings.Split(expression, ":")
-				expression = strings.TrimSpace(exp_split[0])
-				regex := strings.TrimSpace(exp_split[1])
+				expSplit := strings.Split(expression, ":")
+				expression = strings.TrimSpace(expSplit[0])
+				regex := strings.TrimSpace(expSplit[1])
 
 				var err error
 				child.regex, err = regexp.Compile(regex)
@@ -247,7 +247,7 @@ func (n *matcherNode) match(path []string) (Results, error) {
 
 // Return non-nil data of any nodes explicitly matching the prefix.
 func (n *matcherNode) prefixMatch(prefix []string) []interface{} {
-	results := make([]interface{}, 0)
+	var results []interface{}
 
 	node := n
 	for i := range prefix {
@@ -264,7 +264,7 @@ func (n *matcherNode) prefixMatch(prefix []string) []interface{} {
 			results = append(results, node.data)
 		}
 
-		queue := make([]*matcherNode, 0)
+		var queue []*matcherNode
 		for _, v := range node.children {
 			queue = append(queue, v)
 		}

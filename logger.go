@@ -32,45 +32,47 @@ type Logger interface {
 	Close() error
 }
 
-// VertoLogger is the Verto default implementation of verto.Logger.
-type VertoLogger struct {
+// DefauktLogger is the Verto default implementation of verto.Logger.
+type DefaultLogger struct {
 	subscribers map[string]chan string
 	dropped     map[string][]string
 	files       []*os.File
 }
 
 // NewLogger returns a pointer to a newly initialized VertoLogger instance.
-func NewLogger() *VertoLogger {
-	return &VertoLogger{
+func NewLogger() *DefaultLogger {
+	return &DefaultLogger{
 		subscribers: make(map[string]chan string),
 		dropped:     make(map[string][]string),
 		files:       make([]*os.File, 0),
 	}
 }
 
-// Add subscriber adds a channel between the logger and subscriber to
+// AddSubscriber adds a channel between the logger and subscriber to
 // VertoLogger. Any messages written by VertoLogger will be piped out to
 // the returned channel. NOTE: If a previous subscriber with the same key exists,
 // it will be OVERWRITTEN.
-func (vl *VertoLogger) AddSubscriber(key string) <-chan string {
-	vl.subscribers[key] = make(chan string)
-	vl.dropped[key] = make([]string, 0)
-	return vl.subscribers[key]
+func (dl *DefaultLogger) AddSubscriber(key string) <-chan string {
+	dl.subscribers[key] = make(chan string)
+	dl.dropped[key] = make([]string, 0)
+	return dl.subscribers[key]
 }
 
-func (vl *VertoLogger) AddFile(f *os.File) error {
+// AddFile registers an open file for logging. Returns
+// an error if a bad file is passed in.
+func (dl *DefaultLogger) AddFile(f *os.File) error {
 	if f == nil {
 		return errors.New("logger.AddFile: bad file as argument")
 	}
 
-	vl.files = append(vl.files, f)
+	dl.files = append(dl.files, f)
 	return nil
 }
 
-// AddFile attempts to open the file at path as append-only
+// AddFilePath attempts to open the file at path as append-only
 // and will begin writing messages to the file or return an error
 // if an error occured opening up the file.
-func (vl *VertoLogger) AddFilePath(path string) error {
+func (dl *DefaultLogger) AddFilePath(path string) error {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return err
@@ -80,23 +82,23 @@ func (vl *VertoLogger) AddFilePath(path string) error {
 		return err
 	}
 
-	vl.files = append(vl.files, f)
+	dl.files = append(dl.files, f)
 	return nil
 }
 
 // Dropped returns a slice of strings representing
 // any dropped log messages due to timeout sends to
 // the subscriber described by key.
-func (vl *VertoLogger) Dropped(key string) []string {
-	return vl.dropped[key]
+func (dl *DefaultLogger) Dropped(key string) []string {
+	return dl.dropped[key]
 }
 
 // Close attempts to close all opened files attached to VertoLogger.
 // Errors are recorded and combined into one single error so that an
 // error doesn't prevent the closing of other files.
-func (vl *VertoLogger) Close() error {
+func (dl *DefaultLogger) Close() error {
 	var buf bytes.Buffer
-	for _, v := range vl.files {
+	for _, v := range dl.files {
 		err := v.Close()
 		if err != nil {
 			buf.WriteString(err.Error())
@@ -104,7 +106,7 @@ func (vl *VertoLogger) Close() error {
 		}
 	}
 
-	for _, v := range vl.subscribers {
+	for _, v := range dl.subscribers {
 		close(v)
 	}
 
@@ -113,91 +115,91 @@ func (vl *VertoLogger) Close() error {
 
 // Info prints an info level message to all subscribers and open
 // log files. Info returns an error if there was an error printing.
-func (vl *VertoLogger) Info(v ...interface{}) error {
+func (dl *DefaultLogger) Info(v ...interface{}) error {
 	prefix := "[INFO]"
-	return vl.lprint(prefix, v...)
+	return dl.lprint(prefix, v...)
 }
 
 // Debug prints a debug level message to all subscribers and open
 // log files. Debug returns an error if there was an error printing.
-func (vl *VertoLogger) Debug(v ...interface{}) error {
+func (dl *DefaultLogger) Debug(v ...interface{}) error {
 	prefix := "[DEBUG]"
-	return vl.lprint(prefix, v...)
+	return dl.lprint(prefix, v...)
 }
 
 // Warn prints a warn level message to all subscribers and open
 // log files. Warn returns an error if there was an error printing.
-func (vl *VertoLogger) Warn(v ...interface{}) error {
+func (rl *DefaultLogger) Warn(v ...interface{}) error {
 	prefix := "[WARN]"
-	return vl.lprint(prefix, v...)
+	return rl.lprint(prefix, v...)
 }
 
 // Error prints an error level message to all subscribers and open
 // log files. Error returns an error if there was an error printing.
-func (vl *VertoLogger) Error(v ...interface{}) error {
+func (dl *DefaultLogger) Error(v ...interface{}) error {
 	prefix := "[ERROR]"
-	return vl.lprint(prefix, v...)
+	return dl.lprint(prefix, v...)
 }
 
 // Infof prints a formatted info level message to all subscribers and open
 // log files. Info returns an error if there was an error printing.
-func (vl *VertoLogger) Infof(format string, v ...interface{}) error {
+func (dl *DefaultLogger) Infof(format string, v ...interface{}) error {
 	prefix := "[INFO]"
-	return vl.lprintf(prefix, format, v...)
+	return dl.lprintf(prefix, format, v...)
 }
 
 // Debugf prints a formatted debug level message to all subscribers and open
 // log files. Debug returns an error if there was an error printing.
-func (vl *VertoLogger) Debugf(format string, v ...interface{}) error {
+func (dl *DefaultLogger) Debugf(format string, v ...interface{}) error {
 	prefix := "[DEBUG]"
-	return vl.lprintf(prefix, format, v...)
+	return dl.lprintf(prefix, format, v...)
 }
 
 // Warnf prints a formatted warn level message to all subscribers and open
 // log files. Warn returns an error if there was an error printing.
-func (vl *VertoLogger) Warnf(format string, v ...interface{}) error {
+func (dl *DefaultLogger) Warnf(format string, v ...interface{}) error {
 	prefix := "[WARN]"
-	return vl.lprintf(prefix, format, v...)
+	return dl.lprintf(prefix, format, v...)
 }
 
 // Errorf prints a formmated error level message to all subscribers and open
 // log files. Error returns an error if there was an error printing.
-func (vl *VertoLogger) Errorf(format string, v ...interface{}) error {
+func (dl *DefaultLogger) Errorf(format string, v ...interface{}) error {
 	prefix := "[ERROR]"
-	return vl.lprintf(prefix, format, v...)
+	return dl.lprintf(prefix, format, v...)
 }
 
 // Print prints a message to all subscribers and open
 // log files. Print returns an error if there was an error printing.
-func (vl *VertoLogger) Print(v ...interface{}) error {
-	return vl.lprint("", v...)
+func (dl *DefaultLogger) Print(v ...interface{}) error {
+	return dl.lprint("", v...)
 }
 
 // Printf prints a formatted message to all subscribers and open
 // log files. Printf returns an error if there was an error printing.
-func (vl *VertoLogger) Printf(format string, v ...interface{}) error {
-	return vl.lprintf("", format, v...)
+func (dl *DefaultLogger) Printf(format string, v ...interface{}) error {
+	return dl.lprintf("", format, v...)
 }
 
 // Prints a message to all subscribers and open log files.
 // Returns an error if there was an error printing.
-func (vl *VertoLogger) lprint(prefix string, v ...interface{}) error {
+func (dl *DefaultLogger) lprint(prefix string, v ...interface{}) error {
 	var buf bytes.Buffer
-	vl.appendPrefix(prefix, &buf)
+	dl.appendPrefix(prefix, &buf)
 
 	buf.WriteString(fmt.Sprint(v))
 	buf.WriteString("\n")
 
 	msg := buf.String()
 
-	vl.pushToSubs(msg)
-	return vl.writeToFiles(msg)
+	dl.pushToSubs(msg)
+	return dl.writeToFiles(msg)
 }
 
 // Prints a formatted message.
-func (vl *VertoLogger) lprintf(prefix, format string, v ...interface{}) error {
+func (dl *DefaultLogger) lprintf(prefix, format string, v ...interface{}) error {
 	var buf bytes.Buffer
-	vl.appendPrefix(prefix, &buf)
+	dl.appendPrefix(prefix, &buf)
 
 	if len(v) > 0 {
 		buf.WriteString(fmt.Sprintf(format, v))
@@ -208,13 +210,13 @@ func (vl *VertoLogger) lprintf(prefix, format string, v ...interface{}) error {
 
 	msg := buf.String()
 
-	vl.pushToSubs(msg)
-	return vl.writeToFiles(msg)
+	dl.pushToSubs(msg)
+	return dl.writeToFiles(msg)
 }
 
 // Appends a prefix consisting of the current time and the passed in prefix
 // to a byte Buffer. Assumes the buffer is valid (not nil).
-func (vl *VertoLogger) appendPrefix(prefix string, buf *bytes.Buffer) {
+func (dl *DefaultLogger) appendPrefix(prefix string, buf *bytes.Buffer) {
 	buf.WriteString(time.Now().String())
 	buf.WriteString(": ")
 	buf.WriteString(prefix)
@@ -222,22 +224,22 @@ func (vl *VertoLogger) appendPrefix(prefix string, buf *bytes.Buffer) {
 }
 
 // Pushes a string message to all subscribers.
-func (vl *VertoLogger) pushToSubs(msg string) {
-	for k, s := range vl.subscribers {
+func (dl *DefaultLogger) pushToSubs(msg string) {
+	for k, s := range dl.subscribers {
 		select {
 		case s <- msg:
 			break
 		case <-time.After(500 * time.Millisecond):
-			vl.dropped[k] = append(vl.dropped[k], msg)
+			dl.dropped[k] = append(dl.dropped[k], msg)
 		}
 	}
 }
 
 // Writes a string message to all open log files.
-func (vl *VertoLogger) writeToFiles(msg string) error {
+func (dl *DefaultLogger) writeToFiles(msg string) error {
 	var errBuf bytes.Buffer
 
-	for _, f := range vl.files {
+	for _, f := range dl.files {
 		_, err := f.WriteString(msg)
 		if err != nil {
 			errBuf.WriteString(err.Error())

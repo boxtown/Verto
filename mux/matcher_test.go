@@ -17,7 +17,7 @@ func TestNodeAdd(t *testing.T) {
 
 	// Test add to root
 	err := "Failed add to root."
-	p := make([]string, 0)
+	var p []string
 	n.add(p, "A")
 	v := n.data
 	if v != "A" {
@@ -134,7 +134,7 @@ func TestNodeMatch(t *testing.T) {
 
 	// Test match root
 	err = "Failed match root."
-	p := make([]string, 0)
+	var p []string
 	n.add(p, "A")
 	results, e := n.match(p)
 	if e != nil {
@@ -225,7 +225,7 @@ func TestNodeLongestPrefixMatch(t *testing.T) {
 
 	// Test match root
 	err := "Failed match root."
-	p := make([]string, 0)
+	var p []string
 	n.add(p, "A")
 	results := n.longestPrefixMatch(p)
 	if results.Data() != "A" {
