@@ -10,6 +10,7 @@ logging, and middleware chaining.
   - [Routing](#routing)
   - [Path Redirection](#path-redirection)
   - [Middleware Chaining](#middleware-chaining)
+  - [Groups](#groups)
   - [Context](#context)
   - [Response Handler](#response-handler)
   - [Error Handler](#error-handler)
@@ -22,7 +23,7 @@ logging, and middleware chaining.
     v := verto.New()
     
     // Register a route
-    v.Register("GET", "/", func(c *verto.Context) (interface{}, error) {
+    v.Add("GET", "/", func(c *verto.Context) (interface{}, error) {
       fmt.Fprintf(c.Response, "Hello, World!")
     })
     
@@ -49,9 +50,9 @@ Verto will also happily take `http.Handler` as a routing endpoint.
   
 ### Routing  
   
-Verto offers simple routing. Endpoints are registered using the `Register` and `RegisterHandler`  
+Verto offers simple routing. Endpoints are registered using the `Add` and `AddHandker`  
 methods. The parameters are the method to be matched, the path to be matched, and the endpoint  
-handler. `Register` takes a `verto.ResourceFunc` as an endpoint and `RegisterHandler` takes a  
+handler. `Add` takes a `verto.ResourceFunc` as an endpoint and `AddHandler` takes a  
 normal `http.Handler`. 
   
   ```Go
@@ -63,10 +64,10 @@ normal `http.Handler`.
       fmt.Fprintf(w, "Hello, World!")
     })
     
-    v.Register("GET", "/path/to/1", endpoint1)
-    v.Register("POST", "/path/to/1", endpoint1)
+    v.Add("GET", "/path/to/1", endpoint1)
+    v.Add("POST", "/path/to/1", endpoint1)
     
-    v.RegisterHandler("PUT", "/path/to/2", endpoint2)
+    v.AddHandler("PUT", "/path/to/2", endpoint2)
   ```
   
 Verto also includes the option for named parameters in the path. Named parameters can 
@@ -84,12 +85,12 @@ be more strictly defined using regular expressions. Named parameters will be inj
     })
     
     // Named parameters are denoted by { }
-    v.Register("GET", "/path/to/{param}", endpoint1)
-    v.Register("POST", "/path/to/{param}", endpoint1)
+    v.Add("GET", "/path/to/{param}", endpoint1)
+    v.Add("POST", "/path/to/{param}", endpoint1)
     
     // Apply a regex check to the param by use of : followed by
     // the regex.
-    v.RegisterHandler("PUT", "/path/to/{param: ^[0-9]+$}", endpoint2)
+    v.AddHandler("PUT", "/path/to/{param: ^[0-9]+$}", endpoint2)
   ```
   
 ### Path redirection  
@@ -132,7 +133,7 @@ If the middleware comes in the form of an `http.Handler`, next is automatically 
     v.UseVerto(mw3)
     
     // Register route
-    v.Register("GET", "/", func(c *verto.Context) (interface{}, error) {
+    v.Add("GET", "/", func(c *verto.Context) (interface{}, error) {
       fmt.Fprintf(c.Response, "Finished.")
     })
     
@@ -144,11 +145,48 @@ Middleware can also be chained per route
   ```Go
     // Register route and chain middle ware. These middleware
     // will only be run for GET requests on /.
-    v.Register("GET", "/", func(c *verto.Context) (interface{}, error) {
+    v.Add("GET", "/", func(c *verto.Context) (interface{}, error) {
       ...
     }).UseHandler(mw1).Use(mw2).UseVerto(mw3)
   ```
   
+### Groups
+  
+Verto provides the ability to create route groups.  
+
+  ```Go
+  // Create a group
+  g := v.Group("/path/path2/path3")
+  
+  // Add endpoint handlers to a route group. The full path
+  // for the handler will be /path/path2/path3/handler. 
+  g.Add("GET", "/handler", http.HandlerFunc(
+    func(w http.ResponseWriter, http.Request) {
+      fmt.Fprintf(w, "Hello!")
+    },
+  ))
+  
+  // Middleware can be chained per route group. Middleware
+  // will be run for all subgroups and handlers under the parent
+  // group.
+  g.Use(mux.PluginFunc(
+    func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+      fmt.Fprintf(w, "World!")
+    },
+  ))
+  
+  // Create subgroups attached to a group. The resulting subgroup
+  // path will be /path/path2/path3/path4.
+  sub := g.Group("/path4")
+  ```
+  Creating a group when there exists other groups/endpoint handlers that share
+  a path prefix with the new group will cause those groups/endpoints to be subsumed
+  under the new group. When creating groups, all wildcard segments are treated as
+  equal. Thus, groups/endpoints subsumed under a new group with a wildcard segment
+  in the shared prefix will use the new group's wildcard segment as key instead of
+  their old segments. Attempting to create an already existing group returns the
+  existing group.  
+    
 ### Context  
   
 Context is the custom parameter used for Verto's `ResourceFunc`s.  
@@ -271,29 +309,35 @@ the user brings his own handler. The default just responds with a `500 Internal 
   
 Injections are anything from the outside world you need passed to an endpoint  
 handler. A single injection instance is passed to all handlers and plugins.  
-**NOTE:** The `Inject()`, `Uninject()`, and `ClearInjection()` functions **ARE** thread safe.  
+**NOTE:** The `Set()`, `Get()`, `TryGet()`, `Delete()`, and `Clear()` functions **ARE** thread safe.  
   
   ```Go
     // Injection example
     
-    // Inject using the Inject() function. The first parameter
+    // Inject using the Injections.Set() function. The first parameter
     // is the key used to access then injection from within
     // any handlers or plugins that implement verto.PluginFunc.
-    v.Inject("key", "value")
+    v.Injections.Set("key", "value")
     
     // Inject anything like slices or structs
     sl := make([]int64, 5)
     st := &struct{
       Value int64,
     }{}
-    v.Inject("slice", sl)
-    v.Inject("struct", st)
+    v.Injections.Set("slice", sl)
+    v.Injections.Set("struct", st)
     
-    // Uninject() removes an injection.
-    v.Uninject("slice")
+    // Retrieve values with Get()
+    st2 := v.Injections.Get("struct")
     
-    // ClearInjections clears all injections
-    v.ClearInjections()
+    // TryGet() lets you check if the value exists
+    st3, exists := v.Injections.TryGet("struct")
+    
+    // Delete() removes an injection.
+    v.Injections.Delete("slice")
+    
+    // Clear clears all injections
+    v.Injections.Clear()
   ```
   
 Injections are useful for things intricate loggers, analytics,  
@@ -301,43 +345,50 @@ and caching.
 
 ### Logging  
   
-Verto supports the use of logging but does not provide a default  
-option. A custom logger can be registered as long as it follows  
-the form:  
+Verto provides a default logger implementation but allows
+custom loggers that implement the following interface:  
   
   ```Go
-    type Logger interface {
-     // Log logs message msg to the default location
-     // and returns true on a successful log.
-     Log(msg string) bool
-     
-     // LogTo logs message msg to the location identified
-     // by name. Returns true on a successful log.
-     LogTo(name, msg string) bool
-    }
+  type Logger interface {
+    // The following functions print messages
+    // at various levels to any open log files and subscribers
+    Info(v ...interface{}) error
+    Debug(v ...interface{}) error
+    Warn(v ...interface{}) error
+    Error(v ...interface{}) error
+    
+    // The following functions print formatted messages
+    // at various levels to any open log files and subscribers
+    Infof(format string, v ...interface{}) error
+    Debugf(format string, v ...interface{}) error
+    Warnf(format string, v ...interface{}) error
+    Errorf(format string, v ...interface{}) error
+    
+    // Print a message to open log files and subscribers
+    Print(v ...interface{}) error
+    // Print a formatted message to open log files and subscribers
+    Printf(format string, v ...interface{}) error
+    
+    // Add a subscriber channel that gets log messages pushed to it.
+    // The channel should be read from regularly to prevent dropped messages.
+    // The default logger drops messages if they've been blocking for 0.5s
+    AddSubscriber(key string) <-chan string
+    
+    // Add an open log file to write messages to. An error
+    // is thrown for invalid files.
+    AddFile(f *os.File) error
+    
+    // Open a file at path to write messages to. If the file could
+    // not be opened/created for appending, an error will be thrown.
+    AddFilePath(path string) error
+    
+    // Retrieve any dropped messages for a subscriber channel.
+    Dropped(key string) []string
+    
+    // Close any open log files and subscriber channels. Returns
+    // an error if there was any issue closing any files or channels.
+    Close() error
+  }
   ```
-   
-Example:  
-  
-  ```Go
-    type LogWrapper struct {
-      log.Logger
-    }
-    
-    func (lw LogWrapper) Log(msg string) bool {
-      lw.Logger.Print(msg)
-      return true
-    }
-    
-    func (lw LogWrapper) LogTo(name, msg string) bool {
-      lw.Logger.Print(msg)
-      return true
-    }
-    
-    f, _ := os.Open("/path/to/logfile.log")
-    l, _ := log.New(f, "Prefix: ", 0)
-    
-    v.RegisterLogger(&LogWrapper{l})
-    // flag must be set to log
-    v.SetLogging(true)
-  ```
+
+Custom logger implementations can be registered using the `RegisterLogger()` function.
