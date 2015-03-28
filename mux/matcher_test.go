@@ -563,3 +563,39 @@ func TestDefaultMatcherLongestPrefixMatch(t *testing.T) {
 		t.Errorf(err)
 	}
 }
+
+func TestDefaultMatcherPrefixMatch(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			t.Errorf(err.(error).Error())
+		}
+	}()
+
+	err := "Failed prefix match."
+	m := &DefaultMatcher{}
+
+	m.Add("/path", "A")
+	m.Add("/path/path2", "B")
+	m.Add("/path/path3", "C")
+	m.Add("/path4", "D")
+	m.Add("/path4/path5", "E")
+
+	// Match none
+	results := m.PrefixMatch("/non-existent")
+	if len(results) > 0 {
+		t.Errorf(err)
+	}
+
+	// Match path 1
+	results = m.PrefixMatch("/path")
+	if len(results) != 3 {
+		t.Errorf(err)
+	}
+
+	// Match path 2
+	results = m.PrefixMatch("/path4")
+	if len(results) != 2 {
+		t.Errorf(err)
+	}
+}

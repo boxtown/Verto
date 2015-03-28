@@ -12,11 +12,17 @@ import (
 // allows for the addition of per-route plugin
 // handlers.
 type Node interface {
+	// Use adds a PluginHandler onto the end of the chain of plugins
+	// for a node.
 	Use(handler PluginHandler) Node
+
+	// UseHandler wraps the handler as a PluginHandler and adds it onto the end
+	// of the plugin chain.
 	UseHandler(hander http.Handler) Node
 }
 
-// muxNode is the PathMuxer implementation of Node.
+// muxNode is a private struct used to keep track of handlers
+// and plugins per method+path.
 type muxNode struct {
 	mux *PathMuxer
 
@@ -40,7 +46,8 @@ func newMuxNode(mux *PathMuxer, path string) *muxNode {
 
 // ServeHTTP delegates to the appropriate handler based on
 // the request method or calls the Not Implemented handler if
-// the desired method handler does not exist.
+// the desired method handler does not exist. If there is a method-appropriate
+// chain of plugins, those will be run first.
 func (node *muxNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler, ok := node.handlers[r.Method]
 	if !ok {
@@ -69,6 +76,15 @@ type nodeImpl struct {
 	chains    map[string]*plugins
 }
 
+func newNodeImpl(method string, node *muxNode) *nodeImpl {
+	return &nodeImpl{
+		chainLock: node.chainLock,
+		method:    method,
+		handlers:  node.handlers,
+		chains:    node.chains,
+	}
+}
+
 // Use adds a PluginHandler onto the end of the chain of plugins
 // for a node.
 func (node *nodeImpl) Use(handler PluginHandler) Node {
@@ -90,7 +106,7 @@ func (node *nodeImpl) Use(handler PluginHandler) Node {
 	chain.use(handler)
 	chain.use(PluginFunc(
 		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-			node.handlers[r.Method].ServeHTTP(w, r)
+			node.handlers[node.method].ServeHTTP(w, r)
 		}))
 
 	return node

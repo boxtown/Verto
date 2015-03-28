@@ -61,9 +61,12 @@ func New() *PathMuxer {
 // and returns the endpoint node.
 func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 	path = cleanPath(path)
-	searchPath := getSearchPath(path)
+	if strings.Contains(path, "/*/") {
+		panic("PathMuxer.Add: '*' is reserved by PathMuxer.")
+	}
+	searchPath := cleanWildcards(path)
 
-	node, _, err := mux.findNode(searchPath, false)
+	node, _, err := mux.findNode(searchPath)
 	if err != nil {
 		node = newMuxNode(mux, path)
 		node.handlers[method] = handler
@@ -72,12 +75,7 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 		node.handlers[method] = handler
 	}
 
-	return &nodeImpl{
-		chainLock: node.chainLock,
-		method:    method,
-		chains:    node.chains,
-		handlers:  node.handlers,
-	}
+	return newNodeImpl(method, node)
 }
 
 // AddFunc wraps f as an http.Handler and set is as handler for a specific method+path
@@ -87,29 +85,44 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 	return mux.Add(method, path, http.Handler(http.HandlerFunc(f)))
 }
 
-/* func (mux *PathMuxer) Group(path string) {
-	group := mux.findGroup(path)
-	if group != nil && group.prefix == path {
-		return
+func (mux *PathMuxer) Group(path string) Group {
+	path = cleanPath(path)
+	searchPath := cleanWildcards(path)
+
+	group, _ := mux.findGroup(searchPath)
+	if group != nil && cleanWildcards(group.prefix) == searchPath {
+		return group
+	} else if group != nil {
+		path = trimPathPrefix(group.prefix, path, false)
+		return group.Group(path)
 	}
 
 	group = New()
 	group.prefix = path
 
-	subNodes := mux.nodes.PrefixMatch(path)
-	subGroups := mux.groups.PrefixMatch(path)
+	subNodes := mux.nodes.PrefixMatch(searchPath)
+	subGroups := mux.groups.PrefixMatch(searchPath)
 
-	for _, n := range subNodes {
-
+	for _, v := range subNodes {
+		n := v.(*muxNode)
+		mux.nodes.Delete(cleanWildcards(n.path))
+		n.path = trimPathPrefix(n.path, path, false)
+		group.nodes.Add(n.path, n)
 	}
-	for _, g := range subGroups {
-
+	for _, v := range subGroups {
+		g := v.(*PathMuxer)
+		mux.groups.Delete(cleanWildcards(g.prefix))
+		g.prefix = trimPathPrefix(g.prefix, path, false)
+		group.groups.Add(g.prefix, g)
 	}
-} */
+
+	mux.groups.Add(path, group)
+	return group
+}
 
 // Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
-func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
+func (mux *PathMuxer) Use(handler PluginHandler) Group {
 	mux.chainLock.Lock()
 	defer mux.chainLock.Unlock()
 
@@ -123,7 +136,7 @@ func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 
 // UseHandler wraps the handler as a PluginHandler and adds it onto the ned of
 // the global plugin chain for the muxer.
-func (mux *PathMuxer) UseHandler(handler http.Handler) *PathMuxer {
+func (mux *PathMuxer) UseHandler(handler http.Handler) Group {
 	pluginHandler := PluginFunc(
 		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 			handler.ServeHTTP(w, r)
@@ -177,83 +190,98 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // find attempts to find the node and aggregate values and plugins for the node at
-// path by first recursively searching subgroups and then attempting to find the node
+// path by first searching subgroups and then attempting to find the node
 // directly. find returns an error if any is encountered while searching. For each
 // subgroup found, find makes a copy of the plugin chain and links together these
 // chains so that they run in the correct order. The average run time is
 // O(m * n) where m is the average length of a plugin chain and n the average
 // length of a path.
 func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) {
-	path = strings.TrimPrefix(path, mux.prefix)
+	path = trimPathPrefix(path, mux.prefix, true)
 
-	// Attempt to find by subgroup
-	sub := mux.findGroup(path)
+	var node *muxNode = nil
+	var values url.Values = url.Values{}
+	var chain *plugins = nil
+	var err error = nil
+
+	if mux.chain != nil && mux.chain.length > 0 {
+		mux.chainLock.RLock()
+		chain = mux.chain.deepCopy()
+		mux.chainLock.RUnlock()
+	}
+
+	// Match subgroups
+	sub, vals := mux.findGroup(path)
+	s := sub
+	for s != nil {
+		// Handle sub chains
+		if s.chain != nil && s.chain.length > 0 {
+			s.chainLock.RLock()
+			if chain == nil {
+				chain = s.chain.deepCopy()
+			} else {
+				chain.link(s.chain.deepCopy())
+			}
+			s.chainLock.RUnlock()
+		}
+
+		// Handle wildcard path values
+		if vals != nil {
+			for k, v := range vals {
+				values[k] = v
+			}
+		}
+
+		sub = s
+		path = trimPathPrefix(path, sub.prefix, true)
+		s, vals = sub.findGroup(path)
+	}
+
+	// Find endpoint node
 	if sub != nil {
-		node, values, chain, err := sub.find(path)
+		node, vals, err = sub.findNode(path)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-
-		// Subgroup found, if subchain exists, set return
-		// chain to sub chain
-		if sub.chain != nil && sub.chain.length > 0 {
-
-			sub.chainLock.RLock()
-			chainCpy := sub.chain.deepCopy()
-			sub.chainLock.RUnlock()
-
-			if chain != nil && chain.length > 0 {
-				chainCpy.link(chain)
+		if vals != nil {
+			for k, v := range vals {
+				values[k] = v
 			}
-			chain = chainCpy
 		}
-
-		// Set current mux's chain as first then subchain as next
-		// if current mux's chain exists
-		if mux.chain != nil && mux.chain.length > 0 {
-			mux.chainLock.RLock()
-			chainCpy := mux.chain.deepCopy()
-			mux.chainLock.RUnlock()
-
-			if chain != nil && chain.length > 0 {
-				chainCpy.link(chain)
+	} else {
+		node, vals, err = mux.findNode(path)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if vals != nil {
+			for k, v := range vals {
+				values[k] = v
 			}
-			chain = chainCpy
 		}
-		return node, values, chain, nil
 	}
-
-	node, values, err := mux.findNode(path, true)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	mux.chainLock.RLock()
-	chain := mux.chain.deepCopy()
-	mux.chainLock.RUnlock()
-
 	return node, values, chain, nil
 }
 
 // findGroup returns the PathMuxer whose path is the longest
 // prefix match of the passed in path or nil if no such
 // muxer exists.
-func (mux *PathMuxer) findGroup(path string) *PathMuxer {
+func (mux *PathMuxer) findGroup(path string) (*PathMuxer, url.Values) {
 	results := mux.groups.LongestPrefixMatch(path)
 	if results.Data() == nil {
-		return nil
+		return nil, nil
 	}
 	pm, ok := results.Data().(*PathMuxer)
 	if !ok {
-		return nil
+		return nil, nil
 	}
-	return pm
+	return pm, results.Values()
 }
 
 // findNode finds and returns the node associated with the path
 // plus any wildcard query parameters. Returns ErrNotFound if the
 // path doesn't exist. Returns ErrRedirectSlash if a handler with (without)
 // a trailing slash exists.
-func (mux *PathMuxer) findNode(path string, matchRegex bool) (*muxNode, url.Values, error) {
+func (mux *PathMuxer) findNode(path string) (*muxNode, url.Values, error) {
 	results, err := mux.nodes.Match(path)
 	if err != nil {
 		return nil, nil, err
@@ -332,7 +360,7 @@ func appendParams(query string, params string) string {
 	return buf.String()
 }
 
-func getSearchPath(path string) string {
+func cleanWildcards(path string) string {
 	pathSplit := strings.Split(path, "/")
 	for i := range pathSplit {
 		if strings.HasPrefix(pathSplit[i], "{") && strings.HasSuffix(pathSplit[i], "}") {
@@ -354,4 +382,88 @@ func getSearchPath(path string) string {
 		}
 	}
 	return searchPath
+}
+
+// Works the same as strings.TrimPrefix but treats
+// wildcard path segments as equivalent.
+func trimPathPrefix(path, prefix string, skipWild bool) string {
+	if len(prefix) > len(path) {
+		return path
+	}
+
+	var buf bytes.Buffer
+	i := 0
+	j := 0
+	early := false
+
+	for i < len(prefix) && !early {
+		a := prefix[i]
+		b := path[j]
+		if a == '{' && a != b && skipWild {
+			for a != '}' {
+				i++
+				if i == len(prefix) {
+					early = true
+					break
+				}
+				a = prefix[i]
+			}
+			if early {
+				break
+			}
+			for b != '/' {
+				j++
+				if j == len(path) {
+					early = true
+					break
+				}
+				b = path[j]
+			}
+			if early {
+				break
+			}
+			continue
+		} else if a != b {
+			break
+		}
+
+		if a == '{' {
+			start := j
+			for a != '}' {
+				i++
+				if i == len(prefix) {
+					early = true
+					j = start
+					break
+				}
+				a = prefix[i]
+			}
+			if early {
+				break
+			}
+			for b != '}' {
+				j++
+				if j == len(path) {
+					early = true
+					j = start
+					break
+				}
+				b = path[j]
+			}
+			if early {
+				break
+			}
+			i--
+			j--
+		}
+		i++
+		j++
+	}
+
+	for j < len(path) {
+		buf.WriteRune(rune(path[j]))
+		j++
+	}
+
+	return buf.String()
 }

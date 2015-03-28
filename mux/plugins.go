@@ -75,6 +75,7 @@ func (p *plugins) link(p2 *plugins) {
 
 	p.tail.next = p2.head
 	p2.head.prev = p.tail
+	p.tail = p2.tail
 	p.length += p2.length
 }
 

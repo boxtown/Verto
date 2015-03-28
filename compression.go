@@ -18,13 +18,16 @@ func (w compressionWriter) Header() http.Header {
 }
 
 func (w compressionWriter) Write(b []byte) (int, error) {
+	if len(w.Header().Get("Content-Type")) == 0 {
+		w.Header().Set("Content-Type", http.DetectContentType(b))
+	}
 	return w.Writer.Write(b)
 }
 
 // CompressionPlugin returns a VertoPluginFunc that handles
 // gzip/deflate encoding.
-func CompressionPlugin() VertoPluginFunc {
-	return VertoPluginFunc(compressionFunc)
+func CompressionPlugin() PluginFunc {
+	return PluginFunc(compressionFunc)
 }
 
 func compressionFunc(c *Context, next http.HandlerFunc) {

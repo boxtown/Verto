@@ -37,25 +37,27 @@ type Results interface {
 
 // Interface for a matcher that matches paths to objects.
 type Matcher interface {
-	// Add an object to the matcher registered to the path.
+	// Add adds an object to the matcher registered to the path.
 	Add(path string, object interface{})
 
 	// Deletes the object stored at the node at the path
 	// if it exists.
 	Delete(path string)
 
-	// Returns the object stored at the node with the longest
-	// prefix match.
+	// LongestPrefixMatch returns the object stored at
+	// the node with the longest prefix match with the path.
 	LongestPrefixMatch(path string) Results
 
-	// Attempt to match a path to an object.
+	// Match returns the the data and values associated with
+	// the path or an error if the path isn't registered.
 	Match(path string) (Results, error)
 
-	// Returns all non-nil objects that explicitly matches
+	// PrefixMatch returns all non-nil objects that explicitly match
 	// the prefix.
 	PrefixMatch(prefix string) []interface{}
 }
 
+// Implements the Results interface
 type matcherResults struct {
 	data   interface{}
 	values url.Values
@@ -165,18 +167,19 @@ func (n *matcherNode) longestPrefixMatch(path []string) Results {
 
 			child, exists = node.children[wcStr]
 			if !exists {
-				results.data = node.data
-				return results
+				break
 			}
 			if child.regex != nil && !child.regex.MatchString(segment) {
-				results.data = node.data
-				return results
+				break
 			}
 
 			results.values.Add(child.wildcard, segment)
 		}
 
 		node = child
+	}
+	if node.data == nil && node.parent != nil {
+		node = node.parent
 	}
 
 	results.data = node.data
@@ -283,11 +286,17 @@ func (n *matcherNode) prefixMatch(prefix []string) []interface{} {
 	return results
 }
 
-// Default Matcher implementation.
+// DefaultMatcher is the default implementation
+// of the matcher interface.
 type DefaultMatcher struct {
 	root *matcherNode
 }
 
+// Add registers an object with a specific path. Wildcard path
+// segments are denoted by {}'s. The string within the brackets is
+// used as the key for key-value parameter pairs when matching a path.
+// Regex can be defined inside wildcard path segments by appending a colon
+// and a regex after the inner string.
 func (m *DefaultMatcher) Add(path string, object interface{}) {
 	if m.root == nil {
 		m.root = newMatcherNode()
@@ -297,6 +306,9 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 	m.root.add(pathSplit, object)
 }
 
+// Delete nil's the value registered at path if such a path
+// exists. Wildcard segments are not observed. Thus, to delete
+// wildcard paths, a '*' must be used as the path segment.
 func (m *DefaultMatcher) Delete(path string) {
 	if m.root == nil {
 		return
@@ -306,6 +318,9 @@ func (m *DefaultMatcher) Delete(path string) {
 	m.root.delete(pathSplit)
 }
 
+// LongestPrefixMatch returns the data in the registered with the longest prefix match with
+// path. Wildcard segments are observed. LongestPrefixMatch at a minimum
+// will always return data associated with the empty path.
 func (m *DefaultMatcher) LongestPrefixMatch(path string) Results {
 	if m.root == nil {
 		return &matcherResults{}
@@ -315,6 +330,10 @@ func (m *DefaultMatcher) LongestPrefixMatch(path string) Results {
 	return m.root.longestPrefixMatch(pathSplit)
 }
 
+// Match returns the object registered at path or an error if none exist.
+// Wildcard segments are observed. ErrNotFound is returned if no matching path
+// exists and a trailing slash redirect (tsr) isn't possible. ErrRedirect is returned
+// if no matching path exists but a tsr is possible.
 func (m *DefaultMatcher) Match(path string) (Results, error) {
 	if m.root == nil {
 		return nil, ErrNotFound
@@ -324,6 +343,8 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 	return m.root.match(pathSplit)
 }
 
+// PrefixMatch returns all objects strictly matching the prefix. Wildcard segments
+// are not observed and thus, to match them, one must use '*' path segments.
 func (m *DefaultMatcher) PrefixMatch(prefix string) []interface{} {
 	if m.root == nil {
 		return make([]interface{}, 0)
@@ -333,6 +354,7 @@ func (m *DefaultMatcher) PrefixMatch(prefix string) []interface{} {
 	return m.root.prefixMatch(prefixSplit)
 }
 
+// Splits the path along '/'s, account for leading slashes.
 func (m *DefaultMatcher) splitPath(path string) []string {
 	pathSplit := strings.Split(path, "/")
 	if len(pathSplit) > 0 && len(pathSplit[0]) == 0 {

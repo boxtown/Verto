@@ -52,59 +52,134 @@ func (rf ResponseFunc) Handle(response interface{}, c *Context) {
 	rf(response, c)
 }
 
-// -----------------------------------
-// ----------- Mux Wrapper -----------
+// --------------------------------
+// ----------- Wrappers -----------
 
-// VertoPlugin is a custom plugin definition for Verto that allows injections by
+// Plugin is a custom plugin definition for Verto that allows injections by
 // context.
-type VertoPlugin interface {
+type Plugin interface {
 	Handle(c *Context, next http.HandlerFunc)
 }
 
 // VertoPluginFunc wraps functions as Verto Plugins
-type VertoPluginFunc func(c *Context, next http.HandlerFunc)
+type PluginFunc func(c *Context, next http.HandlerFunc)
 
 // Handle calls functions wrapped by VertoPluginFunc.
-func (vpf VertoPluginFunc) Handle(c *Context, next http.HandlerFunc) {
-	vpf(c, next)
+func (pf PluginFunc) Handle(c *Context, next http.HandlerFunc) {
+	pf(c, next)
 }
 
-// MuxWrapper is a wrapper around mux.Node that allows the use of Verto plugins.
-type MuxWrapper struct {
-	mux.Node
+// GroupWrapper is a wrapper around mux.Group that allows the use of Verto plugins
+type GroupWrapper struct {
+	g mux.Group
+	v *Verto
 }
 
-// Use is a wrapper around mux.Node.Use that returns a MuxWrapper instead
-// of a mux.Node
-func (mw *MuxWrapper) Use(handler mux.PluginHandler) *MuxWrapper {
-	return &MuxWrapper{mw.Node.Use(handler)}
+// Add is a wrapper around mux.Group.Add that returns a NodeWrapper
+// instead of a mux.Node
+func (gw *GroupWrapper) Add(
+	method, path string,
+	rf ResourceFunc) *NodeWrapper {
+
+	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
+		c := &Context{
+			Response:   w,
+			Request:    r,
+			Injections: gw.v.Injections,
+			Logger:     gw.v.Logger,
+		}
+
+		response, err := rf(c)
+		if err != nil {
+			if gw.v.doLogging {
+				gw.v.Logger.Error(err.Error())
+			}
+			gw.v.errorHandler.Handle(err, c)
+		} else {
+			gw.v.responseHandler.Handle(response, c)
+		}
+	}
+
+	return &NodeWrapper{gw.g.AddFunc(method, path, handlerFunc), gw.v}
 }
 
-// UseHandler is a wrapper around mux.Node.UseHandler that returns a MuxWrapper instead
-// of a mux.Node
-func (mw *MuxWrapper) UseHandler(handler http.Handler) *MuxWrapper {
-	return &MuxWrapper{mw.Node.UseHandler(handler)}
+// AddHandler is a wrapper around mux.Group.Add that returns a NodeWrapper
+// instead of a mux.Node
+func (gw *GroupWrapper) AddHandler(
+	method, path string,
+	handler http.Handler) *NodeWrapper {
+
+	return &NodeWrapper{gw.g.Add(method, path, handler), gw.v}
+}
+
+// Group is a wrapper around mux.Group.Group that returns a GroupWrapper
+// instead of a mux.Group
+func (gw *GroupWrapper) Group(path string) *GroupWrapper {
+	return &GroupWrapper{gw.g.Group(path), gw.v}
+}
+
+// Use is a wrapper around mux.Group.Use that returns a GroupWrapper
+// instead of a mux.Group
+func (gw *GroupWrapper) Use(handler mux.PluginHandler) *GroupWrapper {
+	return &GroupWrapper{gw.g.Use(handler), gw.v}
+}
+
+// UseHandler is a wrapper around mux.Group.UseHandler that returns a GroupWrapper
+// instead of a mux.Group
+func (gw *GroupWrapper) UseHandler(handler http.Handler) *GroupWrapper {
+	return &GroupWrapper{gw.g.UseHandler(handler), gw.v}
 }
 
 // UseVerto wraps a VertoPlugin as a mux.PluginHandler and injects v's injections
-// into the context. Returns the MuxWrapper for chaining.
-func (mw *MuxWrapper) UseVerto(v *Verto, plugin VertoPlugin) *MuxWrapper {
-	if v == nil {
-		panic("MuxWrapper.UseVerto: Required Verto is nil")
-	}
-
+// into the context. Returns the GroupWrapper for chaining.
+func (gw *GroupWrapper) UseVerto(plugin Plugin) *GroupWrapper {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Injections: v.injections,
-			Logger:     v.Logger,
+			Injections: gw.v.Injections,
+			Logger:     gw.v.Logger,
 		}
 
 		plugin.Handle(c, next)
 	}
 
-	return &MuxWrapper{mw.Node.Use(mux.PluginFunc(pluginFunc))}
+	return &GroupWrapper{gw.g.Use(mux.PluginFunc(pluginFunc)), gw.v}
+}
+
+// MuxWrapper is a wrapper around mux.Node that allows the use of Verto plugins.
+type NodeWrapper struct {
+	n mux.Node
+	v *Verto
+}
+
+// Use is a wrapper around mux.Node.Use that returns a NodeWrapper instead
+// of a mux.Node
+func (nw *NodeWrapper) Use(handler mux.PluginHandler) *NodeWrapper {
+	return &NodeWrapper{nw.n.Use(handler), nw.v}
+}
+
+// UseHandler is a wrapper around mux.Node.UseHandler that returns a NodeWrapper instead
+// of a mux.Node
+func (nw *NodeWrapper) UseHandler(handler http.Handler) *NodeWrapper {
+	return &NodeWrapper{nw.n.UseHandler(handler), nw.v}
+}
+
+// UseVerto wraps a VertoPlugin as a mux.PluginHandler and injects v's injections
+// into the context. Returns the NodeWrapper for chaining.
+func (nw *NodeWrapper) UseVerto(plugin Plugin) *NodeWrapper {
+	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		c := &Context{
+			Response:   w,
+			Request:    r,
+			Injections: nw.v.Injections,
+			Logger:     nw.v.Logger,
+		}
+
+		plugin.Handle(c, next)
+	}
+
+	return &NodeWrapper{nw.n.Use(mux.PluginFunc(pluginFunc)), nw.v}
 }
 
 // ResourceFunc is the Verto-specifc function for Verto resource handling.
@@ -118,8 +193,9 @@ type Verto struct {
 	Logger    Logger
 	doLogging bool
 
-	muxer      *mux.PathMuxer
-	injections *Injections
+	muxer *mux.PathMuxer
+
+	Injections *Injections
 
 	errorHandler    ErrorHandler
 	responseHandler ResponseHandler
@@ -131,8 +207,9 @@ func New() *Verto {
 		Logger:    NewLogger(),
 		doLogging: false,
 
-		muxer:      mux.New(),
-		injections: NewInjections(),
+		muxer: mux.New(),
+
+		Injections: NewInjections(),
 	}
 
 	v.errorHandler = ErrorFunc(DefaultErrorHandlerFunc)
@@ -141,36 +218,18 @@ func New() *Verto {
 	return &v
 }
 
-// Inject injects a new Injection into the global context
-func (v *Verto) Inject(tag string, injection interface{}) *Verto {
-	v.injections.Set(tag, injection)
-	return v
-}
-
-// Uninject clears an injection from the global context
-func (v *Verto) Uninject(tag string) *Verto {
-	v.injections.Delete(tag)
-	return v
-}
-
-// ClearInjections clears the global context of all injections
-func (v *Verto) ClearInjections() *Verto {
-	v.injections.Clear()
-	return v
-}
-
-// Register registers a specific method+path combination to
+// Add registers a specific method+path combination to
 // a resource function. Any function registered using
-// Register() can be assured the Context will not be null
-func (v *Verto) Register(
+// Add() can be assured the Context will not be null
+func (v *Verto) Add(
 	method, path string,
-	rf ResourceFunc) *MuxWrapper {
+	rf ResourceFunc) *NodeWrapper {
 
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Injections: v.injections,
+			Injections: v.Injections,
 			Logger:     v.Logger,
 		}
 
@@ -185,16 +244,26 @@ func (v *Verto) Register(
 		}
 	}
 
-	return &MuxWrapper{v.muxer.AddFunc(method, path, handlerFunc)}
+	return &NodeWrapper{v.muxer.AddFunc(method, path, handlerFunc), v}
 }
 
-// RegisterHandler registers a specific method+path combination to
+// AddHandler registers a specific method+path combination to
 // an http.Handler.
-func (v *Verto) RegisterHandler(
+func (v *Verto) AddHandler(
 	method, path string,
-	handler http.Handler) *MuxWrapper {
+	handler http.Handler) *NodeWrapper {
 
-	return &MuxWrapper{v.muxer.Add(method, path, handler)}
+	return &NodeWrapper{v.muxer.Add(method, path, handler), v}
+}
+
+// Group creates a group at the specified path. The group's plugins get run
+// for all subgroups and endpoints under the group. Creating a group
+// will automatically subsume any sub-groups and endpoints that already exist
+// and share a path prefix with the group. Subsumed paths with wildcards in the
+// shared prefix will use the new group's wildcard key instead. Attempting to create
+// an already existing group just returns the existing group.
+func (v *Verto) Group(path string) *GroupWrapper {
+	return &GroupWrapper{v.muxer.Group(path), v}
 }
 
 // RegisterLogger register a Logger to Verto.
@@ -238,12 +307,12 @@ func (v *Verto) UseHandler(handler http.Handler) *Verto {
 }
 
 // UseVerto wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
-func (v *Verto) UseVerto(plugin VertoPlugin) *Verto {
+func (v *Verto) UseVerto(plugin Plugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Injections: v.injections,
+			Injections: v.Injections,
 			Logger:     v.Logger,
 		}
 
