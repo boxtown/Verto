@@ -178,7 +178,7 @@ func (n *matcherNode) longestPrefixMatch(path []string) Results {
 
 		node = child
 	}
-	if node.data == nil && node.parent != nil {
+	for node.data == nil && node.parent != nil {
 		node = node.parent
 	}
 
