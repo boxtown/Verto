@@ -97,7 +97,7 @@ func (mux *PathMuxer) Group(path string) Group {
 	if group != nil && cleanWildcards(group.prefix) == searchPath {
 		return group
 	} else if group != nil {
-		path = trimPathPrefix(group.prefix, path, false)
+		path = trimPathPrefix(path, group.prefix, false)
 		return group.Group(path)
 	}
 
