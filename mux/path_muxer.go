@@ -242,27 +242,23 @@ func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) 
 	}
 
 	// Find endpoint node
+	var cur *PathMuxer
 	if sub != nil {
-		node, vals, err = sub.findNode(path)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if vals != nil {
-			for k, v := range vals {
-				values[k] = v
-			}
-		}
+		cur = sub
 	} else {
-		node, vals, err = mux.findNode(path)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if vals != nil {
-			for k, v := range vals {
-				values[k] = v
-			}
+		cur = mux
+	}
+
+	node, vals, err = cur.findNode(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if vals != nil {
+		for k, v := range vals {
+			values[k] = v
 		}
 	}
+
 	return node, values, chain, nil
 }
 
@@ -367,107 +363,58 @@ func appendParams(query string, params string) string {
 func cleanWildcards(path string) string {
 	pathSplit := strings.Split(path, "/")
 	for i := range pathSplit {
-		if strings.HasPrefix(pathSplit[i], "{") && strings.HasSuffix(pathSplit[i], "}") {
+		if isWild(pathSplit[i]) {
 			pathSplit[i] = wcStr
 		}
 	}
 
-	if len(pathSplit) > 0 && len(pathSplit[0]) == 0 {
-		pathSplit = pathSplit[1:]
-	}
-
-	searchPath := "/"
+	var buf bytes.Buffer
 	for i := range pathSplit {
 		segment := pathSplit[i]
-		searchPath += segment
+		buf.WriteString(segment)
 
 		if i < len(pathSplit)-1 {
-			searchPath += "/"
+			buf.WriteRune('/')
 		}
 	}
-	return searchPath
+	return buf.String()
 }
 
 // Works the same as strings.TrimPrefix but treats
 // wildcard path segments as equivalent.
 func trimPathPrefix(path, prefix string, skipWild bool) string {
-	if len(prefix) > len(path) {
-		return path
+	pathSplit := strings.Split(path, "/")
+	prefixSplit := strings.Split(prefix, "/")
+
+	var i int
+	for ; i < len(prefixSplit); i++ {
+		a := prefixSplit[i]
+		b := pathSplit[i]
+		if isWild(a) && a != b && skipWild {
+			continue
+		} else if isWild(a) && isWild(b) {
+			continue
+		}
+		if a != b {
+			break
+		}
 	}
 
 	var buf bytes.Buffer
-	i := 0
-	j := 0
-	early := false
-
-	for i < len(prefix) && !early {
-		a := prefix[i]
-		b := path[j]
-		if a == '{' && a != b && skipWild {
-			for a != '}' {
-				i++
-				if i == len(prefix) {
-					early = true
-					break
-				}
-				a = prefix[i]
-			}
-			if early {
-				break
-			}
-			for b != '/' {
-				j++
-				if j == len(path) {
-					early = true
-					break
-				}
-				b = path[j]
-			}
-			if early {
-				break
-			}
-			continue
-		} else if a != b {
-			break
-		}
-
-		if a == '{' {
-			start := j
-			for a != '}' {
-				i++
-				if i == len(prefix) {
-					early = true
-					j = start
-					break
-				}
-				a = prefix[i]
-			}
-			if early {
-				break
-			}
-			for b != '}' {
-				j++
-				if j == len(path) {
-					early = true
-					j = start
-					break
-				}
-				b = path[j]
-			}
-			if early {
-				break
-			}
-			i--
-			j--
-		}
-		i++
-		j++
+	if i == len(prefixSplit) && i != len(pathSplit) {
+		buf.WriteRune('/')
 	}
+	for ; i < len(pathSplit); i++ {
+		segment := pathSplit[i]
+		buf.WriteString(segment)
 
-	for j < len(path) {
-		buf.WriteRune(rune(path[j]))
-		j++
+		if i < len(pathSplit)-1 {
+			buf.WriteRune('/')
+		}
 	}
-
 	return buf.String()
+}
+
+func isWild(s string) bool {
+	return strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")
 }
