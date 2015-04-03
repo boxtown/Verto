@@ -25,6 +25,7 @@ var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 // ---------- Matcher ----------
 
 const wcStr string = "*"
+const catchAll string = "^"
 
 // Results is an interface for returning results from the matcher
 type Results interface {
@@ -36,6 +37,7 @@ type Results interface {
 }
 
 // Matcher is an interface for a matcher that matches paths to objects.
+// { } denotes a wildcard segment. ^ denotes a catch-all segment.
 type Matcher interface {
 	// Add adds an object to the matcher registered to the path.
 	Add(path string, object interface{})
@@ -130,6 +132,11 @@ func (n *matcherNode) add(path []string, object interface{}) {
 				child.parent = node
 				node.children[segment] = child
 			}
+			if segment == catchAll {
+				child.data = object
+				return
+			}
+
 			node = child
 		}
 	}
@@ -148,6 +155,9 @@ func (n *matcherNode) delete(path []string) {
 			return
 		}
 		node = child
+		if segment == catchAll {
+			break
+		}
 	}
 
 	node.data = nil
@@ -167,6 +177,9 @@ func (n *matcherNode) longestPrefixMatch(path []string) Results {
 
 			child, exists = node.children[wcStr]
 			if !exists {
+				if _, exists := node.children[catchAll]; exists {
+					node = node.children[catchAll]
+				}
 				break
 			}
 			if child.regex != nil && !child.regex.MatchString(segment) {
@@ -218,6 +231,10 @@ func (n *matcherNode) match(path []string) (Results, error) {
 			child, exists = node.children[wcStr]
 			if !exists {
 				// No wildcard
+				if _, exists := node.children[catchAll]; exists {
+					node = node.children[catchAll]
+					break
+				}
 
 				return nil, ErrNotFound
 			}

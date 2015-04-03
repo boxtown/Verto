@@ -88,9 +88,18 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 // Group creates a route group at path. Any existing
 // groups and nodes with a shared path prefix are subsumed.
 // Attempting to create an existing group returns the existing
-// group.
+// group. Paths after and including catch all's are thrown
+// away because catch all's are meaningless for groups.
 func (mux *PathMuxer) Group(path string) Group {
 	path = cleanPath(path)
+
+	// Throw away anything after and including the catch all.
+	if i := strings.Index(path, "^"); i != -1 {
+		if i == len(path)-1 || path[i+1] == '/' {
+			path = path[:i]
+		}
+	}
+
 	searchPath := cleanWildcards(path)
 
 	group, _ := mux.findGroup(searchPath)
@@ -394,8 +403,7 @@ func trimPathPrefix(path, prefix string, skipWild bool) string {
 			continue
 		} else if isWild(a) && isWild(b) {
 			continue
-		}
-		if a != b {
+		} else if a != b {
 			break
 		}
 	}

@@ -68,7 +68,7 @@ func TestNodeAdd(t *testing.T) {
 	}
 
 	// Test add to wildcard with regex
-	err = "Failed add to wildcard with regex."
+	err = "Failed add wildcard with regex."
 	p = []string{"{wc:^[0-9]+}"}
 	n.add(p, "B")
 
@@ -85,6 +85,23 @@ func TestNodeAdd(t *testing.T) {
 	}
 	v = nChild.data
 	if v != "B" {
+		t.Errorf(err)
+	}
+
+	// Test add catch all
+	err = "Failed add catch all."
+	p = []string{"^", "test"}
+	n.add(p, "C")
+
+	nChild, ok = n.children["^"]
+	if !ok {
+		t.Errorf(err)
+	}
+	v = nChild.data
+	if v != "C" {
+		t.Errorf(err)
+	}
+	if _, ok := nChild.children["test"]; ok {
 		t.Errorf(err)
 	}
 }
@@ -111,6 +128,14 @@ func TestNodeDelete(t *testing.T) {
 	err = "Failed delete."
 	n.delete([]string{"root"})
 	if n.children["root"].data != nil {
+		t.Errorf(err)
+	}
+
+	// Test catch all
+	err = "Failed catch all."
+	n.add([]string{"^"}, "A")
+	n.delete([]string{"^", "test"})
+	if n.children["^"].data != nil {
 		t.Errorf(err)
 	}
 }
@@ -211,6 +236,25 @@ func TestNodeMatch(t *testing.T) {
 	if results.Data() != "B" {
 		t.Errorf(err)
 	}
+
+	// Test match catch all
+	err = "Failed match catch all."
+	p = []string{"child", "^"}
+	n.add(p, "C")
+	results, e = n.match([]string{"child", "test"})
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	if results.Data() != "C" {
+		t.Errorf(err)
+	}
+	results, e = n.match([]string{"child", "test", "test2"})
+	if e != nil {
+		t.Errorf(e.Error())
+	}
+	if results.Data() != "C" {
+		t.Errorf(err)
+	}
 }
 
 func TestNodeLongestPrefixMatch(t *testing.T) {
@@ -272,6 +316,19 @@ func TestNodeLongestPrefixMatch(t *testing.T) {
 	}
 	results = n.longestPrefixMatch([]string{"child5"})
 	if results.Data() != "A" {
+		t.Errorf(err)
+	}
+
+	// Test match catch all
+	err = "Failed match catch all."
+	p = []string{"child", "child2", "^"}
+	n.add(p, "D")
+	results = n.longestPrefixMatch([]string{"child", "child2", "child3"})
+	if results.Data() != "D" {
+		t.Errorf(err)
+	}
+	results = n.longestPrefixMatch([]string{"child", "child2", "child3", "child4"})
+	if results.Data() != "D" {
 		t.Errorf(err)
 	}
 }
