@@ -193,6 +193,7 @@ type Verto struct {
 	Logger    Logger
 	doLogging bool
 
+	sl    *StoppableListener
 	muxer *mux.PathMuxer
 
 	Injections *Injections
@@ -211,6 +212,19 @@ func New() *Verto {
 
 		Injections: NewInjections(),
 	}
+
+	// Reserve shutdown path
+	v.muxer.AddFunc(
+		"GET",
+		"/shutdown",
+		func(w http.ResponseWriter, r *http.Request) {
+			ip := GetIP(r)
+			if ip == "127.0.0.1" || ip == "::1" {
+				v.sl.Stop()
+			} else {
+				v.muxer.NotFound.ServeHTTP(w, r)
+			}
+		})
 
 	v.errorHandler = ErrorFunc(DefaultErrorHandlerFunc)
 	v.responseHandler = ResponseFunc(DefaultResponseHandlerFunc)
@@ -335,24 +349,12 @@ func (v *Verto) RunOn(addr string) {
 	if err != nil {
 		panic(err)
 	}
-	sl, _ := WrapListener(listener)
-
-	v.muxer.AddFunc(
-		"GET",
-		"/shutdown",
-		func(w http.ResponseWriter, r *http.Request) {
-			ip := GetIP(r)
-			if ip == "127.0.0.1" || ip == "::1" {
-				sl.Stop()
-			} else {
-				v.muxer.NotFound.ServeHTTP(w, r)
-			}
-		})
+	v.sl, _ = WrapListener(listener)
 
 	server := http.Server{
 		Handler: v.muxer,
 	}
-	server.Serve(sl)
+	server.Serve(v.sl)
 
 	if v.doLogging {
 		v.Logger.Info("Server shutting down.")
