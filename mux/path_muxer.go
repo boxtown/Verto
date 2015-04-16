@@ -326,8 +326,8 @@ func (handler NotImplementedHandler) ServeHTTP(w http.ResponseWriter, r *http.Re
 type RedirectHandler struct{}
 
 func (handler RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusMovedPermanently)
 	w.Header().Set("Location", r.URL.String())
+	w.WriteHeader(http.StatusMovedPermanently)
 }
 
 func cleanPath(p string) string {

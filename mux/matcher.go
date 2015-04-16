@@ -210,10 +210,9 @@ func (n *matcherNode) match(path []string) (Results, error) {
 		segment := path[i]
 		child, exists := node.children[segment]
 		if !exists {
-			// Path segment not found, check for wildcard or trailing slash
 
+			// Check trailing slash case
 			if i > 0 && i == len(path)-1 && segment == "" {
-				// Handle trailing slash
 				redirect, exists := node.parent.children[path[i-1]]
 				if !exists {
 					redirect, exists = node.parent.children[wcStr]
@@ -230,7 +229,6 @@ func (n *matcherNode) match(path []string) (Results, error) {
 
 			child, exists = node.children[wcStr]
 			if !exists {
-				// No wildcard
 				if _, exists := node.children[catchAll]; exists {
 					node = node.children[catchAll]
 					break
@@ -239,8 +237,6 @@ func (n *matcherNode) match(path []string) (Results, error) {
 				return nil, ErrNotFound
 			}
 			if child.regex != nil && !child.regex.MatchString(segment) {
-				// Regex but segment doesn't match.
-
 				return nil, ErrNotFound
 			}
 			results.values.Add(child.wildcard, segment)
@@ -249,6 +245,7 @@ func (n *matcherNode) match(path []string) (Results, error) {
 	}
 
 	if node.data == nil {
+		// Check trailing slash case
 		if child, exists := node.children[""]; exists {
 			if child.data != nil {
 				return nil, ErrRedirectSlash

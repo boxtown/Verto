@@ -32,7 +32,7 @@ type Logger interface {
 	Close() error
 }
 
-// DefauktLogger is the Verto default implementation of verto.Logger.
+// DefaultLogger is the Verto default implementation of verto.Logger.
 type DefaultLogger struct {
 	subscribers map[string]chan string
 	dropped     map[string][]string

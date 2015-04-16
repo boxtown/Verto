@@ -356,6 +356,7 @@ func (v *Verto) RunOn(addr string) {
 
 	if v.doLogging {
 		v.Logger.Info("Server shutting down.")
+		v.Logger.Close()
 	}
 }
 
