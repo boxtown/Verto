@@ -205,10 +205,16 @@ func (n *matcherNode) match(path []string) (Results, error) {
 
 	node := n
 	results := &matcherResults{values: url.Values{}}
+	var lastCatchAll *matcherNode
 
 	for i := 0; i < len(path); i++ {
+
 		segment := path[i]
+		if _, exists := node.children[catchAll]; exists {
+			lastCatchAll = node.children[catchAll]
+		}
 		child, exists := node.children[segment]
+
 		if !exists {
 
 			// Check trailing slash case
@@ -229,8 +235,8 @@ func (n *matcherNode) match(path []string) (Results, error) {
 
 			child, exists = node.children[wcStr]
 			if !exists {
-				if _, exists := node.children[catchAll]; exists {
-					node = node.children[catchAll]
+				if lastCatchAll != nil {
+					node = lastCatchAll
 					break
 				}
 
