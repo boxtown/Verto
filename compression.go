@@ -24,6 +24,10 @@ func (w compressionWriter) Write(b []byte) (int, error) {
 	return w.Writer.Write(b)
 }
 
+func (w compressionWriter) WriteHeader(code int) {
+	w.ResponseWriter.WriteHeader(code)
+}
+
 // CompressionPlugin returns a VertoPluginFunc that handles
 // gzip/deflate encoding.
 func CompressionPlugin() PluginFunc {
