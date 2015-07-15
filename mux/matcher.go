@@ -167,14 +167,12 @@ func (n *matcherNode) delete(path []string) {
 func (n *matcherNode) longestPrefixMatch(path []string) Results {
 
 	node := n
-
 	results := &matcherResults{values: url.Values{}}
 
 	for i := range path {
 		segment := path[i]
 		child, exists := node.children[segment]
 		if !exists {
-
 			child, exists = node.children[wcStr]
 			if !exists {
 				if _, exists := node.children[catchAll]; exists {
@@ -185,14 +183,12 @@ func (n *matcherNode) longestPrefixMatch(path []string) Results {
 			if child.regex != nil && !child.regex.MatchString(segment) {
 				break
 			}
-
 			results.values.Add(child.wildcard, segment)
 		}
-
+		if child.data == nil {
+			break
+		}
 		node = child
-	}
-	for node.data == nil && node.parent != nil {
-		node = node.parent
 	}
 
 	results.data = node.data
@@ -208,28 +204,23 @@ func (n *matcherNode) match(path []string) (Results, error) {
 	var lastCatchAll *matcherNode
 
 	for i := 0; i < len(path); i++ {
-
-		segment := path[i]
 		if _, exists := node.children[catchAll]; exists {
 			lastCatchAll = node.children[catchAll]
 		}
+
+		segment := path[i]
 		child, exists := node.children[segment]
 
 		if !exists {
-
 			// Check trailing slash case
 			if i > 0 && i == len(path)-1 && segment == "" {
 				redirect, exists := node.parent.children[path[i-1]]
 				if !exists {
 					redirect, exists = node.parent.children[wcStr]
+				} 
+				if exists && redirect.data != nil {
+					return nil, ErrRedirectSlash
 				}
-
-				if exists {
-					if redirect.data != nil {
-						return nil, ErrRedirectSlash
-					}
-				}
-
 				return nil, ErrNotFound
 			}
 
@@ -239,7 +230,6 @@ func (n *matcherNode) match(path []string) (Results, error) {
 					node = lastCatchAll
 					break
 				}
-
 				return nil, ErrNotFound
 			}
 			if child.regex != nil && !child.regex.MatchString(segment) {
@@ -257,7 +247,6 @@ func (n *matcherNode) match(path []string) (Results, error) {
 				return nil, ErrRedirectSlash
 			}
 		}
-
 		return nil, ErrNotFound
 	}
 
