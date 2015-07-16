@@ -151,12 +151,12 @@ func TestPathMuxerAddFunc(t *testing.T) {
 }
 
 func TestPathMuxerGroup(t *testing.T) {
-	/* defer func() {
+	defer func() {
 		err := recover()
 		if err != nil {
 			t.Errorf(err.(error).Error())
 		}
-	}() */
+	}()
 
 	err := "Failed group."
 	pm := New()

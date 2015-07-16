@@ -165,7 +165,6 @@ func (n *matcherNode) delete(path []string) {
 
 // Returns the results from the longest common prefix match
 func (n *matcherNode) longestPrefixMatch(path []string) Results {
-
 	node := n
 	results := &matcherResults{values: url.Values{}}
 
@@ -185,10 +184,10 @@ func (n *matcherNode) longestPrefixMatch(path []string) Results {
 			}
 			results.values.Add(child.wildcard, segment)
 		}
-		if child.data == nil {
-			break
-		}
 		node = child
+	}
+	for node.data == nil && node.parent != nil {
+		node = node.parent
 	}
 
 	results.data = node.data

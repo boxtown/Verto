@@ -211,7 +211,7 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // length of a path.
 func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) {
 	path = trimPathPrefix(path, mux.prefix, true)
-
+	
 	var node *muxNode
 	var values = url.Values{}
 	var chain *plugins
