@@ -126,8 +126,12 @@ func TestNodeDelete(t *testing.T) {
 
 	// Test delete
 	err = "Failed delete."
+	n.add([]string{"root", "root2"}, "B")
 	n.delete([]string{"root"})
-	if n.children["root"].data != nil {
+	if _, exists := n.children["root"]; exists {
+		t.Errorf(err)
+	}
+	if _, exists := n.children["root2"]; exists {
 		t.Errorf(err)
 	}
 
@@ -135,7 +139,7 @@ func TestNodeDelete(t *testing.T) {
 	err = "Failed catch all."
 	n.add([]string{"^"}, "A")
 	n.delete([]string{"^", "test"})
-	if n.children["^"].data != nil {
+	if _, exists := n.children["^"]; exists {
 		t.Errorf(err)
 	}
 }

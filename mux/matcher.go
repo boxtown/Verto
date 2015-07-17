@@ -42,8 +42,8 @@ type Matcher interface {
 	// Add adds an object to the matcher registered to the path.
 	Add(path string, object interface{})
 
-	// Deletes the object stored at the node at the path
-	// if it exists.
+	// Deletes the path. Any subpaths of the path
+	// are also lost. Deleting a non-existent path is a no-op.
 	Delete(path string)
 
 	// LongestPrefixMatch returns the object stored at
@@ -144,11 +144,12 @@ func (n *matcherNode) add(path []string, object interface{}) {
 	node.data = object
 }
 
-// Deletes the data for the node at path if it exists.
+// Deletes the node and all subtrees at path if it exists.
 func (n *matcherNode) delete(path []string) {
 
 	node := n
-	for i := range path {
+	i := 0
+	for ; i < len(path); i++ {
 		segment := path[i]
 		child, exists := node.children[segment]
 		if !exists {
@@ -156,11 +157,14 @@ func (n *matcherNode) delete(path []string) {
 		}
 		node = child
 		if segment == catchAll {
+			i++
 			break
 		}
 	}
 
-	node.data = nil
+	parent := node.parent;
+	lastSeg := path[i - 1]
+	delete(parent.children, lastSeg)
 }
 
 // Returns the results from the longest common prefix match
@@ -267,7 +271,7 @@ func (n *matcherNode) prefixMatch(prefix []string) []interface{} {
 		node = child
 	}
 
-	if node != n && len(node.children) > 0 {
+	if node != n {
 		if node.data != nil {
 			results = append(results, node.data)
 		}
