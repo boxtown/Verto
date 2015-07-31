@@ -94,9 +94,9 @@ func (gw *GroupWrapper) Add(
 			if gw.v.doLogging {
 				gw.v.Logger.Error(err.Error())
 			}
-			gw.v.errorHandler.Handle(err, c)
+			gw.v.errHandler.Handle(err, c)
 		} else {
-			gw.v.responseHandler.Handle(response, c)
+			gw.v.respHandler.Handle(response, c)
 		}
 	}
 
@@ -198,8 +198,8 @@ type Verto struct {
 
 	Injections *Injections
 
-	errorHandler    ErrorHandler
-	responseHandler ResponseHandler
+	errHandler  ErrorHandler
+	respHandler ResponseHandler
 }
 
 // New returns a pointer to a newly initialized Verto instance.
@@ -226,8 +226,8 @@ func New() *Verto {
 			}
 		})
 
-	v.errorHandler = ErrorFunc(DefaultErrorHandlerFunc)
-	v.responseHandler = ResponseFunc(DefaultResponseHandlerFunc)
+	v.errHandler = ErrorFunc(DefaultErrorFunc)
+	v.respHandler = ResponseFunc(DefaultResponseFunc)
 
 	return &v
 }
@@ -252,9 +252,9 @@ func (v *Verto) Add(
 			if v.doLogging {
 				v.Logger.Error(err.Error())
 			}
-			v.errorHandler.Handle(err, c)
+			v.errHandler.Handle(err, c)
 		} else {
-			v.responseHandler.Handle(response, c)
+			v.respHandler.Handle(response, c)
 		}
 	}
 
@@ -286,15 +286,15 @@ func (v *Verto) RegisterLogger(Logger Logger) {
 }
 
 // RegisterErrorHandler registers an ErrorHandler to Verto.
-// If no handler is registered, DefaultErrorHandler is used.
-func (v *Verto) RegisterErrorHandler(errorHandler ErrorHandler) {
-	v.errorHandler = errorHandler
+// If no handler is registered, DefaultErrorFunc is used.
+func (v *Verto) RegisterErrorHandler(errHandler ErrorHandler) {
+	v.errHandler = errHandler
 }
 
 // RegisterResponseHandler registers a ResponseHandler to Verto.
-// If no handler is registered, DefaultResponseHandler is used.
-func (v *Verto) RegisterResponseHandler(responseHandler ResponseHandler) {
-	v.responseHandler = responseHandler
+// If no handler is registered, DefaultResponseFunc is used.
+func (v *Verto) RegisterResponseHandler(respHandler ResponseHandler) {
+	v.respHandler = respHandler
 }
 
 // SetLogging sets whether Verto logs or not.
@@ -370,10 +370,10 @@ func (v *Verto) Run() {
 // -------------------------------
 // ---------- Helpers ------------
 
-// DefaultErrorHandlerFunc is the default error handling
-// function for Verto. DefaultErrorHandlerFunc sends a 500 response
+// DefaultErrorFunc is the default error handling
+// function for Verto. DefaultErrorFunc sends a 500 response
 // and the error message as the response body.
-func DefaultErrorHandlerFunc(err error, c *Context) {
+func DefaultErrorFunc(err error, c *Context) {
 	if c == nil {
 		return
 	}
@@ -385,10 +385,10 @@ func DefaultErrorHandlerFunc(err error, c *Context) {
 	fmt.Fprint(c.Response, err.Error())
 }
 
-// DefaultResponseHandlerFunc is the default response handling
+// DefaultResponseFunc is the default response handling
 // function for Verto. DefaultResponseFunc sends a 200 response with
 // response as the response body.
-func DefaultResponseHandlerFunc(response interface{}, c *Context) {
+func DefaultResponseFunc(response interface{}, c *Context) {
 	if c == nil {
 		return
 	}
