@@ -20,7 +20,9 @@ import (
 // -------------------------------------------
 // -------- Interfaces/Definitions -----------
 
-// ErrorHandler is the Verto-specific interface for error handlers
+// ErrorHandler is the Verto-specific interface for error handlers.
+// A default ErrorHandler is provided with Verto but it is recommended
+// to bring your own ErrorHandler.
 type ErrorHandler interface {
 
 	// Handle handles the error. Context is guaranteed to be
@@ -36,7 +38,9 @@ func (erf ErrorFunc) Handle(err error, c *Context) {
 	erf(err, c)
 }
 
-// ResponseHandler is the Verto-specific interface for response handlers
+// ResponseHandler is the Verto-specific interface for response handlers.
+// A default ResponseHandler is provided with Verto but it is recommended
+// to bring your own ResponseHandler.
 type ResponseHandler interface {
 
 	// Handle handles the response. Context is guaranteed to be
@@ -94,9 +98,9 @@ func (gw *GroupWrapper) Add(
 			if gw.v.doLogging {
 				gw.v.Logger.Error(err.Error())
 			}
-			gw.v.errHandler.Handle(err, c)
+			gw.v.ErrorHandler.Handle(err, c)
 		} else {
-			gw.v.respHandler.Handle(response, c)
+			gw.v.ResponseHandler.Handle(response, c)
 		}
 	}
 
@@ -182,27 +186,27 @@ func (nw *NodeWrapper) UseVerto(plugin Plugin) *NodeWrapper {
 	return &NodeWrapper{nw.n.Use(mux.PluginFunc(pluginFunc)), nw.v}
 }
 
-// ResourceFunc is the Verto-specifc function for Verto resource handling.
+// ResourceFunc is the Verto-specific function for endpoint resource handling.
 type ResourceFunc func(c *Context) (interface{}, error)
 
 // ----------------------------
 // ---------- Verto -----------
 
-// Verto is the framework that runs your app.
+// Verto is the framework that runs your application.
 type Verto struct {
-	Logger    Logger
+	Injections      *Injections
+	Logger          Logger
+	ErrorHandler    ErrorHandler
+	ResponseHandler ResponseHandler
+
 	doLogging bool
-
-	sl    *StoppableListener
-	muxer *mux.PathMuxer
-
-	Injections *Injections
-
-	errHandler  ErrorHandler
-	respHandler ResponseHandler
+	sl        *StoppableListener
+	muxer     *mux.PathMuxer
 }
 
 // New returns a pointer to a newly initialized Verto instance.
+// The path /shutdown is automatically reserved as a way to cleanly
+// shutdown the instance but is only available to calls from localhost.
 func New() *Verto {
 	v := Verto{
 		Logger:    NewLogger(),
@@ -226,8 +230,8 @@ func New() *Verto {
 			}
 		})
 
-	v.errHandler = ErrorFunc(DefaultErrorFunc)
-	v.respHandler = ResponseFunc(DefaultResponseFunc)
+	v.ErrorHandler = ErrorFunc(DefaultErrorFunc)
+	v.ResponseHandler = ResponseFunc(DefaultResponseFunc)
 
 	return &v
 }
@@ -252,9 +256,9 @@ func (v *Verto) Add(
 			if v.doLogging {
 				v.Logger.Error(err.Error())
 			}
-			v.errHandler.Handle(err, c)
+			v.ErrorHandler.Handle(err, c)
 		} else {
-			v.respHandler.Handle(response, c)
+			v.ResponseHandler.Handle(response, c)
 		}
 	}
 
@@ -270,6 +274,54 @@ func (v *Verto) AddHandler(
 	return &NodeWrapper{v.muxer.Add(method, path, handler), v}
 }
 
+// Get is a wrapper function around Add() that sets the method
+// as commonly GET
+func (v *Verto) Get(path string, rf ResourceFunc) *NodeWrapper {
+	return v.Add("GET", path, rf)
+}
+
+// GetHandler is a wrapper function around AddHandler() that sets
+// the method as GET
+func (v *Verto) GetHandler(path string, handler http.Handler) *NodeWrapper {
+	return v.AddHandler("GET", path, handler)
+}
+
+// Put is a wrapper function around Add() that sets the method
+// as commonly PUT
+func (v *Verto) Put(path string, rf ResourceFunc) *NodeWrapper {
+	return v.Add("PUT", path, rf)
+}
+
+// PutHandler is a wrapper function around AddHandler() that sets the method
+// as commonly PUT
+func (v *Verto) PutHandler(path string, handler http.Handler) *NodeWrapper {
+	return v.AddHandler("PUT", path, handler)
+}
+
+// Post is a wrapper function around Add() that sets the method
+// as commonly POST
+func (v *Verto) Post(path string, rf ResourceFunc) *NodeWrapper {
+	return v.Add("POST", path, rf)
+}
+
+// PostHandler is a wrapper function around AddHandler() that sets the method
+// as commonly POST
+func (v *Verto) PostHandler(path string, handler http.Handler) *NodeWrapper {
+	return v.AddHandler("POST", path, handler)
+}
+
+// Delete is a wrapper function around Add() that sets the method
+// as commonly DELETE
+func (v *Verto) Delete(path string, rf ResourceFunc) *NodeWrapper {
+	return v.Add("DELETE", path, rf)
+}
+
+// DeleteHandler is a wrapper function around AddHandler() that sets the method
+// as commonly DELETE
+func (v *Verto) DeleteHandler(path string, handler http.Handler) *NodeWrapper {
+	return v.AddHandler("DELETE", path, handler)
+}
+
 // Group creates a group at the specified path. The group's plugins get run
 // for all subgroups and endpoints under the group. Creating a group
 // will automatically subsume any sub-groups and endpoints that already exist
@@ -278,23 +330,6 @@ func (v *Verto) AddHandler(
 // an already existing group just returns the existing group.
 func (v *Verto) Group(path string) *GroupWrapper {
 	return &GroupWrapper{v.muxer.Group(path), v}
-}
-
-// RegisterLogger register a Logger to Verto.
-func (v *Verto) RegisterLogger(Logger Logger) {
-	v.Logger = Logger
-}
-
-// RegisterErrorHandler registers an ErrorHandler to Verto.
-// If no handler is registered, DefaultErrorFunc is used.
-func (v *Verto) RegisterErrorHandler(errHandler ErrorHandler) {
-	v.errHandler = errHandler
-}
-
-// RegisterResponseHandler registers a ResponseHandler to Verto.
-// If no handler is registered, DefaultResponseFunc is used.
-func (v *Verto) RegisterResponseHandler(respHandler ResponseHandler) {
-	v.respHandler = respHandler
 }
 
 // SetLogging sets whether Verto logs or not.
