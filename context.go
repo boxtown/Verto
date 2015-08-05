@@ -43,7 +43,7 @@ func (c *Context) Get(key string) (string, error) {
 
 	if c.params == nil {
 		if err := c.Request.ParseForm(); err != nil {
-			return err
+			return "", err
 		}
 		c.params = c.Request.Form
 	}
@@ -60,7 +60,7 @@ func (c *Context) GetMulti(key string) ([]string, error) {
 
 	if c.params == nil {
 		if err := c.Request.ParseForm(); err != nil {
-			return err
+			return nil, err
 		}
 		c.params = c.Request.Form
 	}
