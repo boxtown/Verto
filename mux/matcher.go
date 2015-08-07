@@ -326,8 +326,8 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 	if node.data == nil {
 		// Check case where segment is trailing slash and data
 		// may be one level up. We check again here because the
-		// trailing slash node might exist but be nil due to a delete
-		if i > 0 && segment == "" && checkParentForMatch(node, ps[i-2]) {
+		// trailing slash node might exist so we land on it but be nil due to a delete
+		if i > 0 && segment == "" && checkParentForMatch(node.parent, ps[i-2]) {
 			return nil, ErrRedirectSlash
 		}
 		// Check case where data might be in trailing slash node
