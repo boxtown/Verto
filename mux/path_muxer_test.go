@@ -20,7 +20,7 @@ func TestPathMuxerFind(t *testing.T) {
 	m := newMuxNode(nil, "")
 
 	// Test basic find
-	pm.nodes.Add("/path/to/handler", m)
+	pm.matcher.Add("/path/to/handler", m)
 	node, _, _, _ := pm.find("/path/to/handler")
 	if node != m {
 		t.Errorf(err)
@@ -41,8 +41,8 @@ func TestPathMuxerFind(t *testing.T) {
 	// Test basic subgroup find
 	sub := New()
 	sub.prefix = "/path2"
-	sub.nodes.Add("/to/handler", m)
-	pm.groups.Add("/path2", sub)
+	sub.matcher.Add("/to/handler", m)
+	pm.matcher.Add("/path2", sub)
 	node, _, _, _ = pm.find("/path2/to/handler")
 	if node != m {
 		t.Errorf(err)
@@ -51,11 +51,11 @@ func TestPathMuxerFind(t *testing.T) {
 	// Test multi subgroup find
 	sub = New()
 	sub.prefix = "/path3"
-	pm.groups.Add("/path3", sub)
+	pm.matcher.Add("/path3", sub)
 	sub2 := New()
 	sub2.prefix = "/path4"
-	sub.groups.Add("/path4", sub2)
-	sub2.nodes.Add("/to/handler", m)
+	sub.matcher.Add("/path4", sub2)
+	sub2.matcher.Add("/to/handler", m)
 	node, _, _, _ = pm.find("/path3/path4/to/handler")
 	if node != m {
 		t.Errorf(err)
@@ -108,7 +108,7 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "A"
 		},
 	))
-	n, _, _ := pm.findNode("/path/to/handler")
+	n, _, _, _ := pm.find("/path/to/handler")
 	n.handlers["GET"].ServeHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
@@ -120,7 +120,7 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "B"
 		},
 	))
-	n, _, _ = pm.findNode("/path/to/handler")
+	n, _, _, _ = pm.find("/path/to/handler")
 	n.handlers["GET"].ServeHTTP(nil, nil)
 	if tVal != "B" {
 		t.Errorf(err)
@@ -143,7 +143,7 @@ func TestPathMuxerAddFunc(t *testing.T) {
 	pm.AddFunc("GET", "/path/to/handler", func(w http.ResponseWriter, r *http.Request) {
 		tVal = "A"
 	})
-	n, _, _ := pm.findNode("/path/to/handler")
+	n, _, _, _ := pm.find("/path/to/handler")
 	n.handlers["GET"].ServeHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)

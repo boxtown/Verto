@@ -23,10 +23,10 @@ import (
 // Paths can contain named parameters which can be restricted by regexes.
 // PathMuxer also allows the use of global and per-route plugins.
 type PathMuxer struct {
+	parent    *PathMuxer
 	chain     *plugins
 	chainLock *sync.RWMutex
-	nodes     Matcher
-	groups    Matcher
+	matcher   Matcher
 	prefix    string
 
 	NotFound       http.Handler
@@ -44,8 +44,7 @@ func New() *PathMuxer {
 	muxer := PathMuxer{
 		chain:     newPlugins(),
 		chainLock: &sync.RWMutex{},
-		nodes:     &DefaultMatcher{},
-		groups:    &DefaultMatcher{},
+		matcher:   &DefaultMatcher{},
 
 		NotFound:       NotFoundHandler{},
 		NotImplemented: NotImplementedHandler{},
@@ -64,24 +63,34 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 	if strings.Contains(path, "/*/") {
 		panic("PathMuxer.Add: '*' is reserved by PathMuxer.")
 	}
-	searchPath := cleanWildcards(path)
 
-	node, _, err := mux.findNode(searchPath)
+	// Check for group that is prefix of desired path.
+	// If one exists, recursively add handler to group.
+	result := mux.matcher.LongestPrefixMatch(path)
+	if group, ok := result.Data().(*PathMuxer); ok {
+		path = trimPathPrefix(path, group.prefix, false)
+		return group.Add(method, path, handler)
+	}
+
+	// No prefix group, attempt to find pre-existing
+	// node for path. If it exists, set handler for node.
+	// Otherwise create new node and add it to the muxer.
+	var node *muxNode
+	results, err := mux.matcher.Match(path)
 	if err != nil {
 		node = newMuxNode(mux, path)
 		node.handlers[method] = handler
-		mux.nodes.Add(path, node)
+		mux.matcher.Add(path, node)
 	} else {
+		node = results.Data().(*muxNode)
 		node.handlers[method] = handler
 	}
-
 	return newNodeImpl(method, node)
 }
 
 // AddFunc wraps f as an http.Handler and set is as handler for a specific method+path
 // combination. AddFunc returns the endpoint node.
 func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter, r *http.Request)) Node {
-
 	return mux.Add(method, path, http.Handler(http.HandlerFunc(f)))
 }
 
@@ -92,6 +101,9 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 // away because catch all's are meaningless for groups.
 func (mux *PathMuxer) Group(path string) Group {
 	path = cleanPath(path)
+	if path == "" || path == "/" {
+		return mux
+	}
 
 	// Throw away anything after and including the catch all.
 	if i := strings.Index(path, "^"); i != -1 {
@@ -99,37 +111,41 @@ func (mux *PathMuxer) Group(path string) Group {
 			path = path[:i]
 		}
 	}
+	searchPath := replaceWildcards(path)
 
-	searchPath := cleanWildcards(path)
-
-	group, _ := mux.findGroup(searchPath)
-	if group != nil && cleanWildcards(group.prefix) == searchPath {
-		return group
-	} else if group != nil {
-		path = trimPathPrefix(path, group.prefix, false)
-		return group.Group(path)
+	// Find matching or prefix group for path. If matching
+	// group exists, return matching group. Otherwise if it's
+	// a prefix group, recursively group under prefix group.
+	result := mux.matcher.LongestPrefixMatch(searchPath)
+	if group, ok := result.Data().(*PathMuxer); ok {
+		if searchPath == replaceWildcards(group.prefix) {
+			return group
+		} else {
+			path = trimPathPrefix(path, group.prefix, false)
+			return group.Group(path)
+		}
 	}
 
-	group = New()
+	// No matching group or prefix group, create a new
+	// group, grab all groups/nodes with path as a prefix
+	// and delete them from current tree and add them to
+	// new groups tree. Then add new group to muxer.
+	group := New()
+	group.parent = mux
 	group.prefix = path
-
-	subNodes := mux.nodes.PrefixMatch(searchPath)
-	subGroups := mux.groups.PrefixMatch(searchPath)
-
-	for _, v := range subNodes {
-		n := v.(*muxNode)
-		mux.nodes.Delete(cleanWildcards(n.path))
-		n.path = trimPathPrefix(n.path, path, false)
-		group.nodes.Add(n.path, n)
+	subtree := mux.matcher.PrefixMatch(searchPath)
+	mux.matcher.Drop(searchPath)
+	for _, s := range subtree {
+		if n, ok := s.(*muxNode); ok {
+			n.path = trimPathPrefix(n.path, path, false)
+			group.matcher.Add(n.path, n)
+		} else {
+			g := s.(*PathMuxer)
+			g.prefix = trimPathPrefix(g.prefix, path, false)
+			group.matcher.Add(g.prefix, g)
+		}
 	}
-	for _, v := range subGroups {
-		g := v.(*PathMuxer)
-		mux.groups.Delete(cleanWildcards(g.prefix))
-		g.prefix = trimPathPrefix(g.prefix, path, false)
-		group.groups.Add(g.prefix, g)
-	}
-
-	mux.groups.Add(path, group)
+	mux.matcher.Add(path, group)
 	return group
 }
 
@@ -178,7 +194,6 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			mux.Redirect.ServeHTTP(w, r)
 			return
 		}
-
 		mux.NotFound.ServeHTTP(w, r)
 		return
 	}
@@ -211,92 +226,65 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // length of a path.
 func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) {
 	path = trimPathPrefix(path, mux.prefix, true)
-	
+
 	var node *muxNode
 	var values = url.Values{}
 	var chain *plugins
 	var err error
 
+	mux.chainLock.RLock()
 	if mux.chain != nil && mux.chain.length > 0 {
-		mux.chainLock.RLock()
 		chain = mux.chain.deepCopy()
-		mux.chainLock.RUnlock()
 	}
+	mux.chainLock.RUnlock()
 
 	// Match subgroups
-	sub, vals := mux.findGroup(path)
-	s := sub
-	for s != nil {
-		// Handle sub chains
-		if s.chain != nil && s.chain.length > 0 {
-			s.chainLock.RLock()
+	result := mux.matcher.LongestPrefixMatch(path)
+	cur, _ := result.Data().(*PathMuxer)
+	prev := cur
+	for cur != nil {
+		cur.chainLock.RLock()
+		if cur.chain != nil && cur.chain.length > 0 {
 			if chain == nil {
-				chain = s.chain.deepCopy()
+				chain = cur.chain.deepCopy()
 			} else {
-				chain.link(s.chain.deepCopy())
+				chain.link(cur.chain.deepCopy())
 			}
-			s.chainLock.RUnlock()
 		}
+		cur.chainLock.RUnlock()
 
 		// Handle wildcard path values
-		if vals != nil {
-			for k, v := range vals {
+		if result.Values() != nil {
+			for k, v := range result.Values() {
 				values[k] = v
 			}
 		}
 
-		sub = s
-		path = trimPathPrefix(path, sub.prefix, true)
-		s, vals = sub.findGroup(path)
+		prev = cur
+		path = trimPathPrefix(path, cur.prefix, true)
+		result = cur.matcher.LongestPrefixMatch(path)
+		cur, _ = result.Data().(*PathMuxer)
 	}
 
 	// Find endpoint node
-	var cur *PathMuxer
-	if sub != nil {
-		cur = sub
+	var end *PathMuxer
+	if prev != nil {
+		end = prev
 	} else {
-		cur = mux
+		end = mux
 	}
 
-	node, vals, err = cur.findNode(path)
+	result, err = end.matcher.Match(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if vals != nil {
-		for k, v := range vals {
+	if result.Values() != nil {
+		for k, v := range result.Values() {
 			values[k] = v
 		}
 	}
-
+	node = result.Data().(*muxNode)
 	return node, values, chain, nil
-}
-
-// findGroup returns the PathMuxer whose path is the longest
-// prefix match of the passed in path or nil if no such
-// muxer exists.
-func (mux *PathMuxer) findGroup(path string) (*PathMuxer, url.Values) {
-	results := mux.groups.LongestPrefixMatch(path)
-	if results.Data() == nil {
-		return nil, nil
-	}
-	pm, ok := results.Data().(*PathMuxer)
-	if !ok {
-		return nil, nil
-	}
-	return pm, results.Values()
-}
-
-// findNode finds and returns the node associated with the path
-// plus any wildcard query parameters. Returns ErrNotFound if the
-// path doesn't exist. Returns ErrRedirectSlash if a handler with (without)
-// a trailing slash exists.
-func (mux *PathMuxer) findNode(path string) (*muxNode, url.Values, error) {
-	results, err := mux.nodes.Match(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	node, _ := results.Data().(*muxNode)
-	return node, results.Values(), nil
 }
 
 // -----------------------------
@@ -369,7 +357,7 @@ func appendParams(query string, params string) string {
 	return buf.String()
 }
 
-func cleanWildcards(path string) string {
+func replaceWildcards(path string) string {
 	pathSplit := strings.Split(path, "/")
 	for i := range pathSplit {
 		if isWild(pathSplit[i]) {
