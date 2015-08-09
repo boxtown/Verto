@@ -151,12 +151,12 @@ func TestPathMuxerAddFunc(t *testing.T) {
 }
 
 func TestPathMuxerGroup(t *testing.T) {
-	defer func() {
+	/* defer func() {
 		err := recover()
 		if err != nil {
 			t.Errorf(err.(error).Error())
 		}
-	}()
+	}() */
 
 	err := "Failed group."
 	pm := New()
@@ -215,7 +215,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	g3 := pm.Group("/{wc}")
 	g3.Add("GET", "/wcChild", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			tVal = r.URL.Query().Get("wc")
+			tVal = r.FormValue("wc")
 		},
 	))
 	r, _ = http.NewRequest("GET", "http://test.com/wild/wcChild", nil)
@@ -256,7 +256,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	g5 := g3.Group("/wc2")
 	g5.Add("GET", "/wildChild", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			tVal = r.URL.Query().Get("wc")
+			tVal = r.FormValue("wc")
 		},
 	))
 	r, _ = http.NewRequest("GET", "http://test.com/wild/wc2/wildChild", nil)
@@ -325,7 +325,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	g1 = pm.Group("/{wc}/wc2")
 	g1.Add("GET", "/wildChild", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			tVal = r.URL.Query().Get("wc2")
+			tVal = r.FormValue("wc2")
 		},
 	))
 	g1.Use(PluginFunc(
@@ -537,10 +537,10 @@ func TestPathMuxerServeHTTP(t *testing.T) {
 		tVal = "B"
 	})
 	pm.AddFunc("GET", "/path/{wc: ^[0-9]+$}/handler", func(w http.ResponseWriter, r *http.Request) {
-		tVal = r.URL.Query().Get("wc")
+		tVal = r.FormValue("wc")
 	})
 	pm.AddFunc("GET", "/path/{wc: ^[0-8]+$}/handler2", func(w http.ResponseWriter, r *http.Request) {
-		tVal = r.URL.Query().Get("wc") + "2"
+		tVal = r.FormValue("wc") + "2"
 	})
 
 	w := httptest.NewRecorder()

@@ -2,7 +2,6 @@ package mux
 
 import (
 	"net/http"
-	"sync"
 )
 
 // -------------------------------------
@@ -26,9 +25,8 @@ type Node interface {
 type muxNode struct {
 	mux *PathMuxer
 
-	chainLock *sync.RWMutex
-	handlers  map[string]http.Handler
-	chains    map[string]*plugins
+	handlers map[string]http.Handler
+	chains   map[string]*plugins
 
 	path string
 }
@@ -36,11 +34,10 @@ type muxNode struct {
 // newMuxNode returns a pointer to a newly initialized muxNode.
 func newMuxNode(mux *PathMuxer, path string) *muxNode {
 	return &muxNode{
-		mux:       mux,
-		chainLock: &sync.RWMutex{},
-		handlers:  make(map[string]http.Handler),
-		chains:    make(map[string]*plugins),
-		path:      path,
+		mux:      mux,
+		handlers: make(map[string]http.Handler),
+		chains:   make(map[string]*plugins),
+		path:     path,
 	}
 }
 
@@ -56,10 +53,6 @@ func (node *muxNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chain, _ := node.chains[r.Method]
-
-	node.chainLock.RLock()
-	defer node.chainLock.RUnlock()
-
 	if chain == nil || chain.length == 0 {
 		handler.ServeHTTP(w, r)
 	} else {
@@ -70,27 +63,22 @@ func (node *muxNode) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Private implementation of Node that can map plugin chains
 // to specific methods.
 type nodeImpl struct {
-	chainLock *sync.RWMutex
-	method    string
-	handlers  map[string]http.Handler
-	chains    map[string]*plugins
+	method   string
+	handlers map[string]http.Handler
+	chains   map[string]*plugins
 }
 
 func newNodeImpl(method string, node *muxNode) *nodeImpl {
 	return &nodeImpl{
-		chainLock: node.chainLock,
-		method:    method,
-		handlers:  node.handlers,
-		chains:    node.chains,
+		method:   method,
+		handlers: node.handlers,
+		chains:   node.chains,
 	}
 }
 
 // Use adds a PluginHandler onto the end of the chain of plugins
 // for a node.
 func (node *nodeImpl) Use(handler PluginHandler) Node {
-	node.chainLock.Lock()
-	defer node.chainLock.Unlock()
-
 	chain, ok := node.chains[node.method]
 	if !ok {
 		node.chains[node.method] = newPlugins()

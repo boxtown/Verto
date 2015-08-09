@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-	"sync"
 )
 
 // ---------------------------------
@@ -23,11 +22,10 @@ import (
 // Paths can contain named parameters which can be restricted by regexes.
 // PathMuxer also allows the use of global and per-route plugins.
 type PathMuxer struct {
-	parent    *PathMuxer
-	chain     *plugins
-	chainLock *sync.RWMutex
-	matcher   Matcher
-	prefix    string
+	parent  *PathMuxer
+	chain   *plugins
+	matcher Matcher
+	prefix  string
 
 	NotFound       http.Handler
 	NotImplemented http.Handler
@@ -42,9 +40,8 @@ type PathMuxer struct {
 // New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
-		chain:     newPlugins(),
-		chainLock: &sync.RWMutex{},
-		matcher:   &DefaultMatcher{},
+		chain:   nil,
+		matcher: &DefaultMatcher{},
 
 		NotFound:       NotFoundHandler{},
 		NotImplemented: NotImplementedHandler{},
@@ -152,9 +149,6 @@ func (mux *PathMuxer) Group(path string) Group {
 // Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
 func (mux *PathMuxer) Use(handler PluginHandler) Group {
-	mux.chainLock.Lock()
-	defer mux.chainLock.Unlock()
-
 	if mux.chain == nil {
 		mux.chain = newPlugins()
 	}
@@ -199,11 +193,9 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(params) > 0 {
-		r.URL.RawQuery = appendParams(r.URL.RawQuery, params.Encode())
+		r.ParseForm()
+		insertParams(params, r.Form)
 	}
-
-	mux.chainLock.RLock()
-	defer mux.chainLock.RUnlock()
 
 	if chain != nil {
 		chain.use(PluginFunc(
@@ -224,26 +216,21 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // chains so that they run in the correct order. The average run time is
 // O(m * n) where m is the average length of a plugin chain and n the average
 // length of a path.
-func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) {
+func (mux *PathMuxer) find(path string) (*muxNode, []Param, *plugins, error) {
 	path = trimPathPrefix(path, mux.prefix, true)
 
-	var node *muxNode
-	var values = url.Values{}
+	var params = make([]Param, 0, mux.matcher.MaxParams())
 	var chain *plugins
-	var err error
 
-	mux.chainLock.RLock()
 	if mux.chain != nil && mux.chain.length > 0 {
 		chain = mux.chain.deepCopy()
 	}
-	mux.chainLock.RUnlock()
 
 	// Match subgroups
 	result := mux.matcher.LongestPrefixMatch(path)
 	cur, _ := result.Data().(*PathMuxer)
-	prev := cur
+	prev := mux
 	for cur != nil {
-		cur.chainLock.RLock()
 		if cur.chain != nil && cur.chain.length > 0 {
 			if chain == nil {
 				chain = cur.chain.deepCopy()
@@ -251,13 +238,10 @@ func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) 
 				chain.link(cur.chain.deepCopy())
 			}
 		}
-		cur.chainLock.RUnlock()
 
 		// Handle wildcard path values
-		if result.Values() != nil {
-			for k, v := range result.Values() {
-				values[k] = v
-			}
+		if result.Params() != nil && len(result.Params()) > 0 {
+			params = append(params, result.Params()...)
 		}
 
 		prev = cur
@@ -266,25 +250,22 @@ func (mux *PathMuxer) find(path string) (*muxNode, url.Values, *plugins, error) 
 		cur, _ = result.Data().(*PathMuxer)
 	}
 
-	// Find endpoint node
-	var end *PathMuxer
-	if prev != nil {
-		end = prev
-	} else {
-		end = mux
+	// It may be the case that we found the matching node
+	// while matching subgroups
+	if n, ok := isMatchingNode(result, path); ok {
+		params = append(params, result.Params()...)
+		return n, params, chain, nil
 	}
 
-	result, err = end.matcher.Match(path)
+	// Otherwise attempt a full match from the last found
+	// subgroup or the initial mux
+	var err error
+	result, err = prev.matcher.Match(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if result.Values() != nil {
-		for k, v := range result.Values() {
-			values[k] = v
-		}
-	}
-	node = result.Data().(*muxNode)
-	return node, values, chain, nil
+	params = append(params, result.Params()...)
+	return result.Data().(*muxNode), params, chain, nil
 }
 
 // -----------------------------
@@ -318,6 +299,30 @@ func (handler RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusMovedPermanently)
 }
 
+// Inserts parameters into a parameter map
+func insertParams(params []Param, values url.Values) {
+	if len(params) == 0 {
+		return
+	}
+	for _, v := range params {
+		values.Add(v.Key, v.Value)
+	}
+}
+
+// Returns true if the results object contains a node
+// with a path that matches the passed in path
+func isMatchingNode(r Results, path string) (*muxNode, bool) {
+	if n, ok := r.Data().(*muxNode); ok {
+		if n.path == replaceWildcards(path) {
+			return n, true
+		}
+		return nil, false
+	}
+	return nil, false
+}
+
+// Cleans a path by handling duplicate /'s,
+// ., and ..
 func cleanPath(p string) string {
 	if p == "" {
 		return "/"
@@ -334,6 +339,8 @@ func cleanPath(p string) string {
 	return np
 }
 
+// If p does not end with a trailing slash, append one.
+// Otherwise remove the trailing slash
 func handleTrailingSlash(p string) string {
 	if p == "" {
 		return "/"
@@ -349,68 +356,134 @@ func handleTrailingSlash(p string) string {
 	return p
 }
 
-func appendParams(query string, params string) string {
-	var buf bytes.Buffer
-	buf.WriteString(query)
-	buf.WriteString("&")
-	buf.WriteString(params)
-	return buf.String()
-}
-
+// Replaces all wildcard designations in a path (/{...})
+// with the wildcard character '*'
 func replaceWildcards(path string) string {
-	pathSplit := strings.Split(path, "/")
-	for i := range pathSplit {
-		if isWild(pathSplit[i]) {
-			pathSplit[i] = wcStr
-		}
-	}
-
 	var buf bytes.Buffer
-	for i := range pathSplit {
-		segment := pathSplit[i]
-		buf.WriteString(segment)
-
-		if i < len(pathSplit)-1 {
-			buf.WriteRune('/')
+	for i := 0; i < len(path); i++ {
+		r := path[i]
+		if r != '{' || (r == '{' && i > 0 && path[i-1] != '/') {
+			// Not possible start of wc, just write rune
+			buf.WriteRune(rune(r))
+		} else {
+			// Possible start to wc
+			for j := i + 1; j < len(path) && path[j] != '/'; j++ {
+				if j == len(path)-1 && path[j] == '}' {
+					// Found closing brace at end of path with no separator
+					// inbetween. Write wc char and return replaced string
+					buf.WriteRune('*')
+					return buf.String()
+				} else if j < len(path)-1 && path[j] == '}' && path[j+1] == '/' {
+					// Found closing brace but more runes to write. Write
+					// wc char and fast forward index.
+					buf.WriteRune('*')
+					i = j
+					break
+				} else if path[j] == '/' {
+					// No closing brace found. Write original char and keep going.
+					buf.WriteRune('{')
+					break
+				}
+			}
 		}
 	}
 	return buf.String()
 }
 
-// Works the same as strings.TrimPrefix but treats
-// wildcard path segments as equivalent.
+// Trims a path prefix but counts wildcard segments (/{...})
+// as equivalent and can optionally match against wildcards
+// (skipWild: true means /{...} matches anything)
 func trimPathPrefix(path, prefix string, skipWild bool) string {
-	pathSplit := strings.Split(path, "/")
-	prefixSplit := strings.Split(prefix, "/")
+	if len(prefix) >= len(path) {
+		return path
+	}
 
-	var i int
-	for ; i < len(prefixSplit); i++ {
-		a := prefixSplit[i]
-		b := pathSplit[i]
-		if isWild(a) && a != b && skipWild {
-			continue
-		} else if isWild(a) && isWild(b) {
-			continue
+	i := 0
+	j := 0
+	m := 0
+	n := 0
+	for i < len(prefix) && j < len(path) {
+
+		a := prefix[i]
+		b := path[j]
+
+		if a == '{' && (i == 0 || prefix[i-1] == '/') {
+			// Possible start to prefix wc
+			wildA := false
+			for m = i + 1; m < len(prefix) && prefix[m] != '/'; m++ {
+				if m == len(prefix)-1 && prefix[m] == '}' {
+					// Closing brace found at end of prefix.
+					wildA = true
+					break
+				} else if m < len(prefix)-1 && prefix[m] == '}' && prefix[m+1] == '/' {
+					// Closing brace found with more runes to go
+					wildA = true
+					break
+				}
+			}
+			if !wildA {
+				if b == a {
+					// No closing brace so no wild but b and a still match
+					// so continue
+					i++
+					j++
+					continue
+				}
+				// No wild and no a b match so break
+				break
+			}
+			if b != '{' || (b == '{' && j > 0 && path[j-1] != '/') {
+				// No possible start to path wc ergo no match
+				if skipWild {
+					// Skipping wilds so fast foward to next segment
+					for ; i < len(prefix) && prefix[i] != '/'; i++ {
+					}
+					for ; j < len(path) && path[j] != '/'; j++ {
+					}
+					continue
+				}
+				// Not skipping wilds so no match ergo break here
+				break
+			} else {
+				// Possible start to path wc
+				wildB := false
+				for n = j + 1; j < len(path) && path[n] != '/'; n++ {
+					if n == len(path)-1 && path[n] == '}' {
+						// Closing brace found at end of path
+						wildB = true
+						break
+					} else if n < len(path)-1 && path[n] == '}' && path[n+1] == '/' {
+						// Closing brace found with more runes to go
+						wildB = true
+						break
+					}
+				}
+				if !wildB {
+					// No brace ergo no path wc ergo no match
+					if skipWild {
+						// Skipping wild keep on rolling
+						for ; i < len(prefix) && prefix[i] != '/'; i++ {
+						}
+						for ; j < len(path) && path[j] != '/'; j++ {
+						}
+						continue
+					}
+					// Not skipping break here
+					break
+				}
+				i = m
+				j = n
+			}
 		} else if a != b {
 			break
 		}
+		i++
+		j++
 	}
 
 	var buf bytes.Buffer
-	if i == len(prefixSplit) && i != len(pathSplit) {
-		buf.WriteRune('/')
-	}
-	for ; i < len(pathSplit); i++ {
-		segment := pathSplit[i]
-		buf.WriteString(segment)
-
-		if i < len(pathSplit)-1 {
-			buf.WriteRune('/')
-		}
+	for ; j < len(path); j++ {
+		buf.WriteRune(rune(path[j]))
 	}
 	return buf.String()
-}
-
-func isWild(s string) bool {
-	return strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}")
 }

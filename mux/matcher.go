@@ -26,13 +26,23 @@ var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 
 const wcStr string = "*"
 const catchAll string = "^"
+const empty string = ""
+
+// Param represents a Key-Value HTTP parameter pair
+type Param struct {
+	Key   string
+	Value string
+}
 
 // Results is an interface for returning results from the matcher
 type Results interface {
 	// Returns the resulting data from the path match
 	Data() interface{}
 
-	// Returns any path parameters encountered while searching.
+	// Returns all parameter objects as a slice
+	Params() []Param
+
+	// Converts parameters slice into a values map and returns it
 	Values() url.Values
 }
 
@@ -59,6 +69,9 @@ type Matcher interface {
 	// is possible.
 	Match(path string) (Results, error)
 
+	// Returns the maximum possible number of wildcard parameters
+	MaxParams() int
+
 	// PrefixMatch returns all objects whose path contains prefix
 	// as a prefix.
 	PrefixMatch(prefix string) []interface{}
@@ -68,16 +81,39 @@ type Matcher interface {
 type matcherResults struct {
 	data   interface{}
 	values url.Values
+	pairs  []Param
+}
+
+func newResults(maxParams int) *matcherResults {
+	return &matcherResults{
+		pairs: make([]Param, 0, maxParams),
+	}
+}
+
+func (mr *matcherResults) addPair(key, value string) {
+	i := len(mr.pairs)
+	mr.pairs = mr.pairs[:i+1]
+	mr.pairs[i].Key = key
+	mr.pairs[i].Value = value
 }
 
 func (mr *matcherResults) Data() interface{} {
 	return mr.data
 }
 
+func (mr *matcherResults) Params() []Param {
+	return mr.pairs
+}
+
 func (mr *matcherResults) Values() url.Values {
+	mr.values = url.Values{}
+	for _, v := range mr.pairs {
+		mr.values.Add(v.Key, v.Value)
+	}
 	return mr.values
 }
 
+// node used in matcher tree
 type matcherNode struct {
 	data     interface{}
 	parent   *matcherNode
@@ -96,7 +132,8 @@ func newMatcherNode() *matcherNode {
 // DefaultMatcher is the default implementation
 // of the matcher interface.
 type DefaultMatcher struct {
-	root *matcherNode
+	root      *matcherNode
+	maxParams int
 }
 
 // Add registers an object with a specific path. Wildcard path
@@ -113,7 +150,8 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 
 	ps := m.splitPath(path)
 	node := m.root
-	for i := range ps {
+	nparams := 0
+	for i := 0; i < len(ps); i++ {
 		segment := ps[i]
 		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
 			// Path segment is wildcard
@@ -142,6 +180,7 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 			}
 			child.wildcard = expression
 			node = child
+			nparams++
 		} else {
 			// Get or add node for this segment and move on
 			child, exists := node.children[segment]
@@ -156,6 +195,9 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 			}
 			node = child
 		}
+	}
+	if nparams > m.maxParams {
+		m.maxParams = nparams
 	}
 	node.data = object
 }
@@ -172,7 +214,7 @@ func (m *DefaultMatcher) Delete(path string) {
 
 	ps := m.splitPath(path)
 	node := m.root
-	for i := range ps {
+	for i := 0; i < len(ps); i++ {
 		segment := ps[i]
 		child, exists := node.children[segment]
 		if !exists {
@@ -227,10 +269,10 @@ func (m *DefaultMatcher) LongestPrefixMatch(path string) Results {
 
 	ps := m.splitPath(path)
 	node := m.root
-	results := &matcherResults{values: url.Values{}}
+	results := newResults(len(ps))
 	var lastCatchAll *matcherNode
 
-	for i := range ps {
+	for i := 0; i < len(ps); i++ {
 		// If current node has catchAll, record last
 		// seen catchAll
 		if ca, exists := node.children[catchAll]; exists {
@@ -253,7 +295,7 @@ func (m *DefaultMatcher) LongestPrefixMatch(path string) Results {
 				// No matching child, and path doesn't match wildcard
 				break
 			}
-			results.values.Add(child.wildcard, segment)
+			results.addPair(child.wildcard, segment)
 		}
 		node = child
 	}
@@ -277,9 +319,8 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 	}
 
 	ps := m.splitPath(path)
-	segment := ""
 	node := m.root
-	results := &matcherResults{values: url.Values{}}
+	results := newResults(len(ps))
 	var lastCatchAll *matcherNode
 
 	i := 0
@@ -290,12 +331,11 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 			lastCatchAll = ca
 		}
 
-		segment = ps[i]
-		child, exists := node.children[segment]
+		child, exists := node.children[ps[i]]
 		if !exists {
 			// Check case where segment is trailing slash and
 			// data may be one level up
-			if i > 0 && i == len(ps)-1 && segment == "" {
+			if i > 0 && i == len(ps)-1 && ps[i] == empty {
 				if checkParentForMatch(node, ps[i-1]) {
 					return nil, ErrRedirectSlash
 				}
@@ -315,10 +355,10 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 				return nil, ErrNotFound
 			}
 			// Found wildcard, check for regexp constraint
-			if child.regex != nil && !child.regex.MatchString(segment) {
+			if child.regex != nil && !child.regex.MatchString(ps[i]) {
 				return nil, ErrNotFound
 			}
-			results.values.Add(child.wildcard, segment)
+			results.addPair(child.wildcard, ps[i])
 		}
 		node = child
 	}
@@ -327,11 +367,11 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 		// Check case where segment is trailing slash and data
 		// may be one level up. We check again here because the
 		// trailing slash node might exist so we land on it but be nil due to a delete
-		if i > 0 && segment == "" && checkParentForMatch(node.parent, ps[i-2]) {
+		if i > 0 && ps[i-1] == empty && checkParentForMatch(node.parent, ps[i-2]) {
 			return nil, ErrRedirectSlash
 		}
 		// Check case where data might be in trailing slash node
-		if child, exists := node.children[""]; exists {
+		if child, exists := node.children[empty]; exists {
 			if child.data != nil {
 				return nil, ErrRedirectSlash
 			}
@@ -341,6 +381,10 @@ func (m *DefaultMatcher) Match(path string) (Results, error) {
 
 	results.data = node.data
 	return results, nil
+}
+
+func (m *DefaultMatcher) MaxParams() int {
+	return m.maxParams
 }
 
 // PrefixMatch returns all objects strictly matching the prefix. Wildcard segments
@@ -357,7 +401,7 @@ func (m *DefaultMatcher) PrefixMatch(prefix string) []interface{} {
 	// or we get to the first node who has no children matching
 	// the next segment (the root of the subtree)
 	node := m.root
-	for i := range ps {
+	for i := 0; i < len(ps); i++ {
 		segment := ps[i]
 		child, exists := node.children[segment]
 		if !exists {
