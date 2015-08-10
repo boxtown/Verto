@@ -73,7 +73,8 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Node {
 	// node for path. If it exists, set handler for node.
 	// Otherwise create new node and add it to the muxer.
 	var node *muxNode
-	results, err := mux.matcher.Match(path)
+	searchPath := replaceWildcards(path)
+	results, err := mux.matcher.Match(searchPath)
 	if err != nil {
 		node = newMuxNode(mux, path)
 		node.handlers[method] = handler
