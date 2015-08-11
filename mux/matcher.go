@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// --------------------------------
 // ---------- Mux Errors ----------
+// --------------------------------
 
 // ErrNotFound gets returned by Matcher if a path could not be matched.
 var ErrNotFound = errors.New("mux: handler not found")
@@ -21,12 +21,14 @@ var ErrNotImplemented = errors.New("mux: handler not implemented")
 // but a path with (without) a slash exists.
 var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 
-// -----------------------------
-// ---------- Matcher ----------
+// ---------- Constants ----------
+// -------------------------------
 
-const wcStr string = "*"
 const catchAll string = "^"
 const empty string = ""
+
+// ---------- Param ----------
+// ---------------------------
 
 // Param represents a Key-Value HTTP parameter pair
 type Param struct {
@@ -34,17 +36,20 @@ type Param struct {
 	Value string
 }
 
+// ---------- Results ----------
+// -----------------------------
+
 // Results is an interface for returning results from the matcher
 type Results interface {
 	// Returns the resulting data from the path match
 	Data() interface{}
 
-	// Returns all parameter objects as a slice
+	// Returns all parameter key-value pairs as a slice
 	Params() []Param
-
-	// Converts parameters slice into a values map and returns it
-	Values() url.Values
 }
+
+// ---------- Matcher ----------
+// -----------------------------
 
 // Matcher is an interface for a matcher that matches paths to objects.
 // { } denotes a wildcard segment. ^ denotes a catch-all segment.
@@ -52,32 +57,25 @@ type Matcher interface {
 	// Add adds an object to the matcher registered to the path.
 	Add(path string, object interface{})
 
-	// Deletes the path but leaves sub-paths intact.
-	Delete(path string)
-
-	// Deletes the path and all sub-paths rooted at path.
-	Drop(path string)
-
-	// LongestPrefixMatch returns the object whose path
-	// is the longest match with path. The longest possible
-	// match is an object whose path is exactly path.
-	LongestPrefixMatch(path string) Results
-
 	// Match returns the the data and values associated with
 	// the path or an error if the path isn't cannot be found.
 	// Should return ErrRedirectSlash if a trailing slash redirect
 	// is possible.
 	Match(path string) (Results, error)
 
+	// MatchNoRegex performs the same as Match except without
+	// doing regex checking for wildcard parameters.
+	MatchNoRegex(path string) (Results, error)
+
 	// Returns the maximum possible number of wildcard parameters
 	MaxParams() int
-
-	// PrefixMatch returns all objects whose path contains prefix
-	// as a prefix.
-	PrefixMatch(prefix string) []interface{}
 }
 
-// Implements the Results interface
+// ---------- matcherResults -----------
+// -------------------------------------
+
+// matcherResults is a simple and efficient
+// implementation of the Results interface
 type matcherResults struct {
 	data   interface{}
 	values url.Values
@@ -105,19 +103,75 @@ func (mr *matcherResults) Params() []Param {
 	return mr.pairs
 }
 
-func (mr *matcherResults) Values() url.Values {
-	mr.values = url.Values{}
-	for _, v := range mr.pairs {
-		mr.values.Add(v.Key, v.Value)
-	}
-	return mr.values
+// ---------- pathIndexer ----------
+// ---------------------------------
+
+// pathIndexer returns the start and end indexes
+// of path segments separated by /'s for efficient
+// inline path parsing.
+type pathIndexer struct {
+	path   string
+	sBegin int
+	ts     bool
 }
 
-// node used in matcher tree
+// Returns true if the indexer lies on the trailing slash
+func (p *pathIndexer) atTrailingSlash() bool {
+	if p.sBegin != len(p.path) || len(p.path) == 0 {
+		return false
+	}
+	if p.path[p.sBegin-1] != '/' {
+		return false
+	}
+	p.ts = true
+	return p.ts
+}
+
+// Returns true if the indexer was once lying on the trailing slash.
+// This is necessary because calling next() on the trailing slash
+// will advance the indexer such that atTrailingSlash() returns false
+// but we need to know if there was a trailing slash for redirects.
+func (p *pathIndexer) seenTrailingSlash() bool {
+	return p.ts
+}
+
+// Returns true if there is more of the path to index or we are at
+// the trailing slash
+func (p *pathIndexer) hasNext() bool {
+	return p.sBegin < len(p.path) || p.atTrailingSlash()
+}
+
+// Returns the next path segment delimited by slashes
+// or an empty string if we lay on the trailing slash.
+func (p *pathIndexer) next() string {
+	i := p.sBegin
+	if p.atTrailingSlash() {
+		p.sBegin++
+		return p.path[i:]
+	}
+	if i == 0 && p.path[i] == '/' {
+		i++
+	}
+
+	j := i
+	for j < len(p.path) && p.path[j] != '/' {
+		j++
+	}
+	p.sBegin = j + 1
+	return p.path[i:j]
+}
+
+// --------- matcherNode ----------
+// --------------------------------
+
+// matcherNode is the k-ary node used in the
+// DefaultMatcher's tree
 type matcherNode struct {
-	data     interface{}
-	parent   *matcherNode
-	children map[string]*matcherNode
+	data      interface{}
+	parent    *matcherNode
+	children  map[string]*matcherNode
+	wildChild *matcherNode
+	catchAll  *matcherNode
 
 	wildcard string
 	regex    *regexp.Regexp
@@ -128,6 +182,9 @@ func newMatcherNode() *matcherNode {
 		children: make(map[string]*matcherNode),
 	}
 }
+
+// ---------- DefaultMatcher ----------
+// ------------------------------------
 
 // DefaultMatcher is the default implementation
 // of the matcher interface.
@@ -148,29 +205,32 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 		m.root = newMatcherNode()
 	}
 
-	ps := m.splitPath(path)
+	pi := &pathIndexer{path: path}
 	node := m.root
 	nparams := 0
-	for i := 0; i < len(ps); i++ {
-		segment := ps[i]
-		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+
+	for pi.hasNext() {
+		// Get next path segment
+		s := pi.next()
+
+		if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
 			// Path segment is wildcard
-			child, exists := node.children[wcStr]
-			if !exists {
+			child := node.wildChild
+			if child == nil {
 				// If no wildcard node, create new one
 				child = newMatcherNode()
 				child.parent = node
-				node.children[wcStr] = child
+				node.wildChild = child
 			}
 
-			expression := strings.TrimPrefix(strings.TrimSuffix(segment, "}"), "{")
-			expression = strings.TrimSpace(expression)
-			if strings.Contains(expression, ":") {
+			wc := strings.TrimPrefix(strings.TrimSuffix(s, "}"), "{")
+			wc = strings.TrimSpace(wc)
+			if strings.Contains(wc, ":") {
 				// Path segment contains regexp
 				// Parse out and save regexp
-				expSplit := strings.Split(expression, ":")
-				expression = strings.TrimSpace(expSplit[0])
-				regex := strings.TrimSpace(expSplit[1])
+				wcSplit := strings.Split(wc, ":")
+				wc = strings.TrimSpace(wcSplit[0])
+				regex := strings.TrimSpace(wcSplit[1])
 
 				var err error
 				child.regex, err = regexp.Compile(regex)
@@ -178,20 +238,26 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 					panic("Could not compile: " + err.Error())
 				}
 			}
-			child.wildcard = expression
+			child.wildcard = wc
 			node = child
 			nparams++
-		} else {
-			// Get or add node for this segment and move on
-			child, exists := node.children[segment]
-			if !exists {
+		} else if s == catchAll {
+			// Path segment is catch all
+			child := node.catchAll
+			if child == nil {
 				child = newMatcherNode()
 				child.parent = node
-				node.children[segment] = child
+				node.catchAll = child
 			}
-			if segment == catchAll {
-				child.data = object
-				return
+			child.data = object
+			return
+		} else {
+			// Get or add node for this segment and move on
+			child, ok := node.children[s]
+			if !ok {
+				child = newMatcherNode()
+				child.parent = node
+				node.children[s] = child
 			}
 			node = child
 		}
@@ -202,265 +268,80 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 	node.data = object
 }
 
-// Delete nil's the value registered at path if such a path
-// exists. Wildcard segments are not observed. Thus, to delete
-// wildcard paths, a '*' must be used as the path segment.
-// Catch-all segments must also be explicitly deleted using
-// '^'.
-func (m *DefaultMatcher) Delete(path string) {
-	if m.root == nil {
-		return
-	}
-
-	ps := m.splitPath(path)
-	node := m.root
-	for i := 0; i < len(ps); i++ {
-		segment := ps[i]
-		child, exists := node.children[segment]
-		if !exists {
-			return
-		}
-		node = child
-		if segment == catchAll {
-			break
-		}
-	}
-	node.data = nil
-}
-
-// Drop deletes the path subtree rooted at path.
-// Any paths with path as a prefix including the path
-// at path are eliminated from the DefaultMatcher. Path
-// matching works the same as it does in Delete where
-// wildcards and catch-all's must be explicitly declared.
-func (m *DefaultMatcher) Drop(path string) {
-	if m.root == nil {
-		return
-	}
-
-	ps := m.splitPath(path)
-	node := m.root
-	i := 0
-	for ; i < len(ps); i++ {
-		child, ok := node.children[ps[i]]
-		if !ok {
-			child, ok = node.children[wcStr]
-			return
-		}
-		if ps[i] == catchAll {
-			node = child
-			break
-		}
-		node = child
-	}
-	if i > 0 {
-		node = node.parent
-		delete(node.children, ps[i-1])
-	}
-}
-
-// LongestPrefixMatch returns the data in the registered with the longest prefix match with
-// path. Wildcard segments are observed. LongestPrefixMatch at a minimum
-// will always return data associated with the empty path.
-func (m *DefaultMatcher) LongestPrefixMatch(path string) Results {
-	if m.root == nil {
-		return &matcherResults{}
-	}
-
-	ps := m.splitPath(path)
-	node := m.root
-	results := newResults(len(ps))
-	var lastCatchAll *matcherNode
-
-	for i := 0; i < len(ps); i++ {
-		// If current node has catchAll, record last
-		// seen catchAll
-		if ca, exists := node.children[catchAll]; exists {
-			lastCatchAll = ca
-		}
-
-		segment := ps[i]
-		child, exists := node.children[segment]
-		if !exists {
-			// Child path doesn't exist, check for wildcard
-			child, exists = node.children[wcStr]
-			if !exists {
-				// No wildcard, check for catch call
-				if lastCatchAll != nil {
-					node = lastCatchAll
-				}
-				break
-			}
-			if child.regex != nil && !child.regex.MatchString(segment) {
-				// No matching child, and path doesn't match wildcard
-				break
-			}
-			results.addPair(child.wildcard, segment)
-		}
-		node = child
-	}
-	for node.data == nil && node.parent != nil {
-		// landed on a nil-node, rewind up the tree
-		// until we hit a non-nil node or the root
-		node = node.parent
-	}
-
-	results.data = node.data
-	return results
-}
-
 // Match returns the object registered at path or an error if none exist.
 // Wildcard segments are observed. ErrNotFound is returned if no matching path
 // exists and a trailing slash redirect (tsr) isn't possible. ErrRedirect is returned
 // if no matching path exists but a tsr is possible.
 func (m *DefaultMatcher) Match(path string) (Results, error) {
+	return m.match(path, true)
+}
+
+// MatchNoRegex performs in the same manner as Match except that it doesn't
+// check regex restrictions on wildcard parameters.
+func (m *DefaultMatcher) MatchNoRegex(path string) (Results, error) {
+	return m.match(path, false)
+}
+
+// MaxParams returns the maximum possible number of
+// parameters in the Matcher based on the added paths.
+func (m *DefaultMatcher) MaxParams() int {
+	return m.maxParams
+}
+
+// Private matching function that contains all the matching logic
+func (m *DefaultMatcher) match(path string, regex bool) (Results, error) {
 	if m.root == nil {
 		return nil, ErrNotFound
 	}
 
-	ps := m.splitPath(path)
+	pi := &pathIndexer{path: path}
 	node := m.root
-	results := newResults(len(ps))
-	var lastCatchAll *matcherNode
+	results := newResults(m.maxParams)
 
-	i := 0
-	for ; i < len(ps); i++ {
-		// If node contains catchAll, record last
-		// seen catchAll
-		if ca, exists := node.children[catchAll]; exists {
-			lastCatchAll = ca
-		}
-
-		child, exists := node.children[ps[i]]
-		if !exists {
-			// Check case where segment is trailing slash and
-			// data may be one level up
-			if i > 0 && i == len(ps)-1 && ps[i] == empty {
-				if checkParentForMatch(node, ps[i-1]) {
+	for pi.hasNext() {
+		s := pi.next()
+		child, ok := node.children[s]
+		if !ok {
+			// No child found, check for case where we are
+			// at trailing slash and a redirect might be in order
+			if pi.seenTrailingSlash() {
+				if node.data != nil {
 					return nil, ErrRedirectSlash
 				}
-				// No node found for segment or wildcard
-				// Send not found signal
+				if node.parent.wildChild != nil && node.parent.wildChild.data != nil {
+					return nil, ErrRedirectSlash
+				}
 				return nil, ErrNotFound
 			}
 
-			// Check for wildcard
-			child, exists = node.children[wcStr]
-			if !exists {
-				// No wildcard, check for catchAll
-				if lastCatchAll != nil {
-					node = lastCatchAll
+			// Not at trailing slash so we check for a possible
+			// wildcard segment
+			if child = node.wildChild; child == nil {
+				// No wildcard so our last resort is a catch all segment
+				if node.catchAll != nil {
+					node = node.catchAll
 					break
 				}
 				return nil, ErrNotFound
 			}
-			// Found wildcard, check for regexp constraint
-			if child.regex != nil && !child.regex.MatchString(ps[i]) {
+
+			// Found wildcard, check the regex constraint if necessary
+			if regex && child.regex != nil && !child.regex.MatchString(s) {
 				return nil, ErrNotFound
 			}
-			results.addPair(child.wildcard, ps[i])
+			results.addPair(child.wildcard, s)
 		}
 		node = child
 	}
-
 	if node.data == nil {
-		// Check case where segment is trailing slash and data
-		// may be one level up. We check again here because the
-		// trailing slash node might exist so we land on it but be nil due to a delete
-		if i > 0 && ps[i-1] == empty && checkParentForMatch(node.parent, ps[i-2]) {
+		// If we are at a node whose data is nil, it is most likely the
+		// case that the data actually lies on a trailing slash node
+		if child, ok := node.children[empty]; ok && child.data != nil {
 			return nil, ErrRedirectSlash
-		}
-		// Check case where data might be in trailing slash node
-		if child, exists := node.children[empty]; exists {
-			if child.data != nil {
-				return nil, ErrRedirectSlash
-			}
 		}
 		return nil, ErrNotFound
 	}
 
 	results.data = node.data
 	return results, nil
-}
-
-func (m *DefaultMatcher) MaxParams() int {
-	return m.maxParams
-}
-
-// PrefixMatch returns all objects strictly matching the prefix. Wildcard segments
-// are not observed and thus, to match them, one must use '*' path segments.
-func (m *DefaultMatcher) PrefixMatch(prefix string) []interface{} {
-	if m.root == nil {
-		return make([]interface{}, 0)
-	}
-
-	ps := m.splitPath(prefix)
-	var results []interface{}
-
-	// Traverse down tree until we run out of path segments
-	// or we get to the first node who has no children matching
-	// the next segment (the root of the subtree)
-	node := m.root
-	for i := 0; i < len(ps); i++ {
-		segment := ps[i]
-		child, exists := node.children[segment]
-		if !exists {
-			break
-		}
-		node = child
-	}
-
-	// If we are not the node we started at (which means there's no prefix match),
-	// we do a BFS of the subtree rooted at node adding the data for
-	if node != m.root {
-		if node.data != nil {
-			results = append(results, node.data)
-		}
-
-		var queue []*matcherNode
-		for _, v := range node.children {
-			queue = append(queue, v)
-		}
-
-		for len(queue) > 0 {
-			node = queue[0]
-			queue = queue[1:]
-
-			if node.data != nil {
-				results = append(results, node.data)
-			}
-
-			for _, v := range node.children {
-				queue = append(queue, v)
-			}
-		}
-	}
-	return results
-}
-
-// Splits the path along '/'s, account for leading slashes.
-func (m *DefaultMatcher) splitPath(path string) []string {
-	pathSplit := strings.Split(path, "/")
-	if len(pathSplit) > 0 && len(pathSplit[0]) == 0 {
-		pathSplit = pathSplit[1:]
-	}
-	return pathSplit
-}
-
-// Check the current node for a TSR to a non-slash node
-func checkParentForMatch(n *matcherNode, path string) bool {
-	if n == nil || n.parent == nil {
-		return false
-	}
-	if n, ok := n.parent.children[path]; ok {
-		if n.data != nil {
-			return true
-		}
-	}
-	if n, ok := n.parent.children[wcStr]; ok {
-		if n.data != nil {
-			return true
-		}
-	}
-	return false
 }
