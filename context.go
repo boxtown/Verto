@@ -119,7 +119,6 @@ func (c *Context) Set(key, value string) error {
 		c.params = c.Request.Form
 	}
 	c.params.Set(key, value)
-	c.Request.PostForm.Set(key, value)
 	return nil
 }
 
@@ -141,7 +140,6 @@ func (c *Context) SetMulti(key string, values []string) error {
 
 	for _, v := range values {
 		c.params.Add(key, v)
-		c.Request.PostForm.Add(key, v)
 	}
 	return nil
 }

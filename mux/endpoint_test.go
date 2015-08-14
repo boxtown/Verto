@@ -13,8 +13,7 @@ func TestEndpointUse(t *testing.T) {
 		}
 	}()
 
-	err := "Failed nodeImpl use."
-	ep := &endpoint{}
+	err := "Failed endpoint use."
 	tVal := ""
 	tVal2 := ""
 
@@ -26,11 +25,11 @@ func TestEndpointUse(t *testing.T) {
 		next(w, r)
 	})
 
-	ep.handler = handler
+	ep := newEndpoint(handler)
 	ep.Use(p)
 
 	r, _ := http.NewRequest("GET", "", nil)
-	ep.chain.run(nil, r)
+	ep.ServeHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -47,8 +46,7 @@ func TestEndpointServeHTTP(t *testing.T) {
 		}
 	}()
 
-	err := "Failed node ServeHTTP."
-	ep := &endpoint{}
+	err := "Failed endpoint ServeHTTP."
 	tVal := ""
 	tVal2 := ""
 
@@ -60,7 +58,7 @@ func TestEndpointServeHTTP(t *testing.T) {
 		next(w, r)
 	})
 
-	ep.handler = handler
+	ep := newEndpoint(handler)
 	r, _ := http.NewRequest("GET", "", nil)
 	ep.ServeHTTP(nil, r)
 	if tVal != "A" {

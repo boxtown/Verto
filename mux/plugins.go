@@ -99,36 +99,6 @@ func (p *plugins) use(handler PluginHandler) {
 	p.tail = plugin
 }
 
-func (p *plugins) popHead() {
-	if p.head == emptyPlugin {
-		return
-	}
-
-	p.length = p.length - 1
-
-	p.head = p.head.next
-	if p.head != emptyPlugin {
-		p.head.prev = emptyPlugin
-	} else {
-		p.tail = emptyPlugin
-	}
-}
-
-func (p *plugins) popTail() {
-	if p.tail == emptyPlugin {
-		return
-	}
-
-	p.length = p.length - 1
-
-	p.tail = p.tail.prev
-	if p.tail != emptyPlugin {
-		p.tail.next = emptyPlugin
-	} else {
-		p.head = emptyPlugin
-	}
-}
-
 func (p *plugins) run(w http.ResponseWriter, r *http.Request) {
 	if p.head == emptyPlugin {
 		return

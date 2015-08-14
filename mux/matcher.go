@@ -2,7 +2,6 @@ package mux
 
 import (
 	"errors"
-	"net/url"
 	"regexp"
 	"strings"
 )
@@ -57,6 +56,10 @@ type Matcher interface {
 	// Add adds an object to the matcher registered to the path.
 	Add(path string, object interface{})
 
+	// Apply applies a function f to all non-nil object stored
+	// in Matcher
+	Apply(f func(object interface{}))
+
 	// Match returns the the data and values associated with
 	// the path or an error if the path isn't cannot be found.
 	// Should return ErrRedirectSlash if a trailing slash redirect
@@ -77,9 +80,8 @@ type Matcher interface {
 // matcherResults is a simple and efficient
 // implementation of the Results interface
 type matcherResults struct {
-	data   interface{}
-	values url.Values
-	pairs  []Param
+	data  interface{}
+	pairs []Param
 }
 
 func newResults(maxParams int) *matcherResults {
@@ -89,10 +91,8 @@ func newResults(maxParams int) *matcherResults {
 }
 
 func (mr *matcherResults) addPair(key, value string) {
-	i := len(mr.pairs)
-	mr.pairs = mr.pairs[:i+1]
-	mr.pairs[i].Key = key
-	mr.pairs[i].Value = value
+	pair := Param{key, value}
+	mr.pairs = append(mr.pairs, pair)
 }
 
 func (mr *matcherResults) Data() interface{} {
@@ -205,7 +205,7 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 		m.root = newMatcherNode()
 	}
 
-	pi := &pathIndexer{path: path}
+	pi := pathIndexer{path: path}
 	node := m.root
 	nparams := 0
 
@@ -268,6 +268,25 @@ func (m *DefaultMatcher) Add(path string, object interface{}) {
 	node.data = object
 }
 
+// Apply does a BFS traversal of the matcher tree and applies
+// function f to all non-nil objects stored in the tree
+func (m *DefaultMatcher) Apply(f func(object interface{})) {
+	queue := make([]*matcherNode, 1)
+	queue[0] = m.root
+
+	for len(queue) > 0 {
+		node := queue[0]
+		queue = queue[1:]
+		for _, child := range node.children {
+			queue = append(queue, child)
+		}
+
+		if node.data != nil {
+			f(node.data)
+		}
+	}
+}
+
 // Match returns the object registered at path or an error if none exist.
 // Wildcard segments are observed. ErrNotFound is returned if no matching path
 // exists and a trailing slash redirect (tsr) isn't possible. ErrRedirect is returned
@@ -294,7 +313,7 @@ func (m *DefaultMatcher) match(path string, regex bool) (Results, error) {
 		return nil, ErrNotFound
 	}
 
-	pi := &pathIndexer{path: path}
+	pi := pathIndexer{path: path}
 	node := m.root
 	results := newResults(m.maxParams)
 

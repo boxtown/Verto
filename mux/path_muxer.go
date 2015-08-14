@@ -38,7 +38,7 @@ type PathMuxer struct {
 // New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
-		chain:    nil,
+		chain:    newPlugins(),
 		matchers: make(map[string]Matcher),
 
 		NotFound:       NotFoundHandler{},
@@ -72,7 +72,9 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Endpoint {
 	var ep *endpoint
 	results, err := m.MatchNoRegex(path)
 	if err != nil {
-		ep = &endpoint{handler: handler}
+		ep = newEndpoint(handler)
+		ep.muxChain.link(mux.chain.deepCopy())
+		ep.compile()
 		m.Add(path, ep)
 	} else {
 		ep = results.Data().(*endpoint)
@@ -90,10 +92,15 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 // Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
 func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
-	if mux.chain == nil {
-		mux.chain = newPlugins()
-	}
+	//mux.chain = append(mux.chain, handler)
 	mux.chain.use(handler)
+	for _, m := range mux.matchers {
+		m.Apply(func(object interface{}) {
+			ep := object.(*endpoint)
+			ep.muxChain.use(handler)
+			ep.compile()
+		})
+	}
 
 	return mux
 }
@@ -140,18 +147,7 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		insertParams(params, r.Form)
 	}
-
-	if mux.chain != nil && mux.chain.length > 0 {
-		chain := mux.chain.deepCopy()
-		chain.use(PluginFunc(
-			func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-				ep.ServeHTTP(w, r)
-			},
-		))
-		chain.run(w, r)
-	} else {
-		ep.ServeHTTP(w, r)
-	}
+	ep.ServeHTTP(w, r)
 }
 
 // Find attempts to find the endpoint matching the passed in method+path

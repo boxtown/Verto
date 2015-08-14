@@ -1,10 +1,5 @@
 package mux
 
-import (
-	"net/http"
-	"testing"
-)
-
 func TestPluginRun(t *testing.T) {
 	defer func() {
 		err := recover()
@@ -85,80 +80,6 @@ func TestPluginsUse(t *testing.T) {
 	}
 
 	if tVal2 != "B" {
-		t.Errorf(err)
-	}
-}
-
-func TestPluginsPopHead(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed pop head."
-	p := newPlugins()
-
-	// Test empty pop
-	p.popHead()
-	if p.head != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail != emptyPlugin {
-		t.Errorf(err)
-	}
-
-	h := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {})
-
-	// Test pop one
-	p.use(h)
-	p.popHead()
-	if p.head != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail != emptyPlugin {
-		t.Errorf(err)
-	}
-
-	// Test pop multiple
-	p.use(h)
-	p.use(h)
-	p.popHead()
-	if p.head == emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail == emptyPlugin {
-		t.Errorf(err)
-	}
-}
-
-func TestPluginsPopTail(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed pop tail."
-	p := newPlugins()
-
-	// Test empty pop
-	p.popTail()
-
-	h := PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {})
-
-	// Test pop one
-	p.use(h)
-	p.popTail()
-	if p.head != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.tail != emptyPlugin {
-		t.Errorf(err)
-	}
-	if p.length != 0 {
 		t.Errorf(err)
 	}
 }

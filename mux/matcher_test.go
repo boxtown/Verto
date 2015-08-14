@@ -163,9 +163,15 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	/* if param := results.Values().Get("wc"); param != "test" {
+	found := false
+	for _, v := range results.Params() {
+		if v.Key == "wc" && v.Value == "test" {
+			found = true
+		}
+	}
+	if !found {
 		t.Errorf(err)
-	} */
+	}
 	if results.Data() != "G" {
 		t.Errorf(err)
 	}
@@ -181,9 +187,15 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	/* if param := results.Values().Get("wc"); param != "42" {
+	found = false
+	for _, v := range results.Params() {
+		if v.Key == "wc" && v.Value == "42" {
+			found = true
+		}
+	}
+	if !found {
 		t.Errorf(err)
-	} */
+	}
 	if results.Data() != "H" {
 		t.Errorf(err)
 	}
@@ -193,9 +205,15 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	/* if param := results.Values().Get("wc"); param != "test" {
+	found = false
+	for _, v := range results.Params() {
+		if v.Key == "wc" && v.Value == "test" {
+			found = true
+		}
+	}
+	if !found {
 		t.Errorf(err)
-	} */
+	}
 	if results.Data() != "H" {
 		t.Errorf(err)
 	}
