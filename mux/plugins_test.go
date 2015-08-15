@@ -1,5 +1,10 @@
 package mux
 
+import (
+	"net/http"
+	"testing"
+)
+
 func TestPluginRun(t *testing.T) {
 	defer func() {
 		err := recover()
