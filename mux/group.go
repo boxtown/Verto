@@ -1,8 +1,13 @@
 package mux
 
+import (
+	"net/http"
+)
+
 type Groupable interface {
 	Join(group *Group)
-	Use(handler PluginHandler)
+	Use(handler PluginHandler) Groupable
+	UseHandler(handler http.Handler) Groupable
 }
 
 type Group struct {
@@ -93,11 +98,10 @@ func (g *Group) Leave(group *Group) {
 
 // Use adds a PluginHandler onto the end of the chain of plugins
 // for a Group.
-func (g *Group) Use(handler PluginHandler) *Group {
-	//ep.chain = append(ep.chain, handler)
+func (g *Group) Use(handler PluginHandler) Groupable {
 	g.chain.use(handler)
 	g.compile()
-	for _ m := g.members {
+	for _, m := range g.members {
 		m.Use(handler)
 	}
 	return g
@@ -105,7 +109,7 @@ func (g *Group) Use(handler PluginHandler) *Group {
 
 // UseHandler wraps the handler as a PluginHandler and adds it onto the end
 // of the plugin chain.
-func (g *Group) UseHandler(handler http.Handler) *Group {
+func (g *Group) UseHandler(handler http.Handler) Groupable {
 	pluginHandler := PluginFunc(
 		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 			handler.ServeHTTP(w, r)
