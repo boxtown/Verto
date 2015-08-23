@@ -14,40 +14,43 @@ func TestDefaultMatcherAdd(t *testing.T) {
 	}()
 
 	m := &DefaultMatcher{}
+	a := &endpoint{}
+	b := &endpoint{}
+	c := &endpoint{}
 
 	// Test add to root
 	err := "Failed add to root."
-	m.Add("", "A")
+	m.Add("", a)
 	v := m.root.data
-	if v != "A" {
+	if v != a {
 		t.Errorf(err)
 	}
 
 	// Test add child
 	err = "Failed add child."
-	m.Add("child", "A")
+	m.Add("child", a)
 	v = m.root.children["child"].data
-	if v != "A" {
+	if v != a {
 		t.Errorf(err)
 	}
 
 	// Test add multiple children
 	err = "Failed add multiple children."
-	m.Add("child/child2", "B")
+	m.Add("child/child2", b)
 	v = m.root.children["child"].children["child2"].data
-	if v != "B" {
+	if v != b {
 		t.Errorf(err)
 	}
 
-	m.Add("child3/child4", "C")
+	m.Add("child3/child4", c)
 	v = m.root.children["child3"].children["child4"].data
-	if v != "C" {
+	if v != c {
 		t.Errorf(err)
 	}
 
 	// Test add wildcard
 	err = "Failed add wildcard."
-	m.Add("{wc}", "A")
+	m.Add("{wc}", a)
 
 	nChild := m.root.wildChild
 	if nChild == nil {
@@ -58,13 +61,13 @@ func TestDefaultMatcherAdd(t *testing.T) {
 		t.Errorf(err)
 	}
 	v = nChild.data
-	if v != "A" {
+	if v != a {
 		t.Errorf(err)
 	}
 
 	// Test add wildcard with regex
 	err = "Failed add wildcard with regex."
-	m.Add("{wc: ^[0-9]+$}", "B")
+	m.Add("{wc: ^[0-9]+$}", b)
 
 	nChild = m.root.wildChild
 	if nChild == nil {
@@ -78,7 +81,7 @@ func TestDefaultMatcherAdd(t *testing.T) {
 		t.Errorf(err)
 	}
 	v = nChild.data
-	if v != "B" {
+	if v != b {
 		t.Errorf(err)
 	}
 }
@@ -92,6 +95,13 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	}()
 
 	m := &DefaultMatcher{}
+	a := &endpoint{}
+	b := &endpoint{}
+	c := &endpoint{}
+	d := &endpoint{}
+	f := &endpoint{}
+	g := &endpoint{}
+	h := &endpoint{}
 
 	// Test match non-existent
 	err := "Failed match non-existent."
@@ -102,55 +112,55 @@ func TestDefaultMatcherMatch(t *testing.T) {
 
 	// Test match root
 	err = "Failed match root."
-	m.Add("", "A")
+	m.Add("", a)
 	results, e := m.Match("")
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	if results.Data() != "A" {
+	if results.Data() != a {
 		t.Errorf(err)
 	}
 
 	// Test match child
 	err = "Failed match child."
-	m.Add("child", "A")
+	m.Add("child", a)
 	results, e = m.Match("child")
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	if results.Data() != "A" {
+	if results.Data() != a {
 		t.Errorf(err)
 	}
 
 	// Test match multiple children
 	err = "Failed match multiple children."
-	m.Add("child/child2", "B")
+	m.Add("child/child2", b)
 	results, e = m.Match("child/child2")
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	if results.Data() != "B" {
+	if results.Data() != b {
 		t.Errorf(err)
 	}
 
-	m.Add("child3/child4", "C")
+	m.Add("child3/child4", c)
 	results, e = m.Match("child3/child4")
 	if e != nil {
 		t.Errorf(e.Error())
 	}
-	if results.Data() != "C" {
+	if results.Data() != c {
 		t.Errorf(err)
 	}
 
 	// Test match trailing slash
 	err = "Failed match trailing slash."
-	m.Add("match", "E")
+	m.Add("match", d)
 	_, e = m.Match("match/")
 	if e != ErrRedirectSlash {
 		t.Errorf(err)
 	}
 
-	m.Add("match2/", "F")
+	m.Add("match2/", f)
 	_, e = m.Match("match2")
 	if e != ErrRedirectSlash {
 		t.Errorf(err)
@@ -158,7 +168,7 @@ func TestDefaultMatcherMatch(t *testing.T) {
 
 	// Test match wildcard
 	err = "Failed match wildcard."
-	m.Add("{wc}", "G")
+	m.Add("{wc}", g)
 	results, e = m.Match("test")
 	if e != nil {
 		t.Errorf(e.Error())
@@ -172,13 +182,13 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	if !found {
 		t.Errorf(err)
 	}
-	if results.Data() != "G" {
+	if results.Data() != g {
 		t.Errorf(err)
 	}
 
 	// Test match wildcard with regex
 	err = "Failed match wildcard with regex."
-	m.Add("{wc: ^[0-9]+$}", "H")
+	m.Add("{wc: ^[0-9]+$}", h)
 	_, e = m.Match("test")
 	if e != ErrNotFound {
 		t.Errorf(err)
@@ -196,7 +206,7 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	if !found {
 		t.Errorf(err)
 	}
-	if results.Data() != "H" {
+	if results.Data() != h {
 		t.Errorf(err)
 	}
 
@@ -214,7 +224,7 @@ func TestDefaultMatcherMatch(t *testing.T) {
 	if !found {
 		t.Errorf(err)
 	}
-	if results.Data() != "H" {
+	if results.Data() != h {
 		t.Errorf(err)
 	}
 }

@@ -1,4 +1,4 @@
-package verto
+package plugins
 
 import (
 	"bytes"

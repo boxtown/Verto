@@ -8,8 +8,8 @@ import (
 // ---------- Plugins ----------
 
 // PluginHandler is an interface for Plugins.
-// If the plugin ran successfully, call next
-// to continue the chain of plugins.
+// If the Plugin ran successfully, call next
+// to continue the chain of Plugins.
 type PluginHandler interface {
 	Handle(w http.ResponseWriter, r *http.Request, next http.HandlerFunc)
 }
@@ -23,50 +23,60 @@ func (p PluginFunc) Handle(w http.ResponseWriter, r *http.Request, next http.Han
 }
 
 // Plugin implements the http.Handler interface. It is a linked list
-// of plugins.
-type plugin struct {
+// of Plugins.
+type Plugin struct {
 	handler PluginHandler
-	next    *plugin
-	prev    *plugin
+	next    *Plugin
+	prev    *Plugin
 }
 
-var emptyPlugin = &plugin{
-	handler: PluginFunc(func(w http.ResponseWriter, r *http.Request, nex http.HandlerFunc) {
+// EmptyPlugin represents an empty Plugin with a no-op handler
+var EmptyPlugin = &Plugin{
+	handler: PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 
 	}),
 }
 
-func (p *plugin) run(w http.ResponseWriter, r *http.Request) {
-	p.handler.Handle(w, r, p.next.run)
+// Run calls the Plugin's handler passing it the next Plugin in line
+func (p *Plugin) Run(w http.ResponseWriter, r *http.Request) {
+	p.handler.Handle(w, r, p.next.Run)
 }
 
-type plugins struct {
-	head *plugin
-	tail *plugin
-
-	length int64
+// Plugins is a doubly-linked list of Plugins
+type Plugins struct {
+	head   *Plugin
+	tail   *Plugin
+	length int
 }
 
-func newPlugins() *plugins {
-	return &plugins{emptyPlugin, emptyPlugin, 0}
+// Returns a newly initialized Plugins with head and tail set
+// to the EmptyPlugin
+func NewPlugins() *Plugins {
+	return &Plugins{EmptyPlugin, EmptyPlugin, 0}
 }
 
-func (p *plugins) deepCopy() *plugins {
-	cpy := newPlugins()
+// DeepCopy returns a deepy copy of Plugins that is
+// safe for manipulation
+func (p *Plugins) DeepCopy() *Plugins {
+	cpy := NewPlugins()
 	next := p.head
-	for next != nil && next != emptyPlugin {
-		cpy.use(next.handler)
+	for next != nil && next != EmptyPlugin {
+		cpy.Use(next.handler)
 		next = next.next
 	}
 	return cpy
 }
 
-func (p *plugins) link(p2 *plugins) {
-	if p2 == nil {
+func (p *Plugins) Length() int {
+	return p.length
+}
+
+// Link links p2 onto the end of this Plugins
+func (p *Plugins) Link(p2 *Plugins) {
+	if p2 == nil || p2.head == EmptyPlugin {
 		return
 	}
-
-	if p.head == emptyPlugin {
+	if p.head == EmptyPlugin {
 		p.head = p2.head
 		p.tail = p2.tail
 		p.length = p2.length
@@ -79,30 +89,33 @@ func (p *plugins) link(p2 *plugins) {
 	p.length += p2.length
 }
 
-func (p *plugins) use(handler PluginHandler) {
+// Use appends handler onto the end of the chain
+// of plugins represented by Plugins
+func (p *Plugins) Use(handler PluginHandler) {
 	p.length = p.length + 1
 
-	plugin := &plugin{
+	Plugin := &Plugin{
 		handler: handler,
-		next:    emptyPlugin,
-		prev:    emptyPlugin,
+		next:    EmptyPlugin,
+		prev:    EmptyPlugin,
 	}
 
-	if p.head == emptyPlugin {
-		p.head = plugin
+	if p.head == EmptyPlugin {
+		p.head = Plugin
 		p.tail = p.head
 		return
 	}
 
-	p.tail.next = plugin
-	plugin.prev = p.tail
-	p.tail = plugin
+	p.tail.next = Plugin
+	Plugin.prev = p.tail
+	p.tail = Plugin
 }
 
-func (p *plugins) run(w http.ResponseWriter, r *http.Request) {
-	if p.head == emptyPlugin {
+// Run runs all the Plugins in Plugins in the order they were added.
+func (p *Plugins) Run(w http.ResponseWriter, r *http.Request) {
+	if p.head == EmptyPlugin {
 		return
 	}
 
-	p.head.run(w, r)
+	p.head.Run(w, r)
 }

@@ -7,6 +7,7 @@ package mux
 // wildcards and regex routes.
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -21,8 +22,8 @@ import (
 // Paths can contain named parameters which can be restricted by regexes.
 // PathMuxer also allows the use of global and per-route plugins.
 type PathMuxer struct {
-	parent   *PathMuxer
-	chain    *plugins
+	chain    *Plugins
+	compiled *Plugins
 	matchers map[string]Matcher
 
 	NotFound       http.Handler
@@ -38,7 +39,7 @@ type PathMuxer struct {
 // New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
-		chain:    newPlugins(),
+		chain:    NewPlugins(),
 		matchers: make(map[string]Matcher),
 
 		NotFound:       NotFoundHandler{},
@@ -72,10 +73,13 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Endpoint {
 	var ep *endpoint
 	results, err := m.MatchNoRegex(path)
 	if err != nil {
-		ep = newEndpoint(handler)
-		ep.muxChain.link(mux.chain.deepCopy())
-		ep.compile()
+		ep = newEndpoint(method, path, mux, handler)
+		ep.Compile()
 		m.Add(path, ep)
+	} else if results.Data().Type() == GROUP {
+		g := results.Data().(*group)
+		path = trimPathPrefix(path, g.path, false)
+		return g.Add(path, handler)
 	} else {
 		ep = results.Data().(*endpoint)
 		ep.handler = handler
@@ -89,16 +93,77 @@ func (mux *PathMuxer) AddFunc(method, path string, f func(w http.ResponseWriter,
 	return mux.Add(method, path, http.Handler(http.HandlerFunc(f)))
 }
 
+// Group creates a group at the passed in path.
+// Groups and endpoints with paths that are
+// subpaths of the passed in path are automatically
+// subsumed by the newly created group.
+// If there is a super-group that the passed in path
+// falls under, the newly created group will be created
+// under the super-group.
+func (mux *PathMuxer) Group(method, path string) Group {
+	path = cleanPath(path)
+
+	// Drop path after/including catch-all
+	if i := strings.Index(path, "^"); i != -1 {
+		path = path[:i]
+	}
+	// Drop trailing slash as it doesn't make sense
+	// in the context of groups
+	if len(path) > 1 && path[len(path)-1] == '/' {
+		path = path[:len(path)-1]
+	}
+
+	// Root passed in, return current mux
+	if len(path) == 0 || path == "/" {
+		panic("PathMuxer.Group: Cannot group at mux root.")
+	}
+
+	// Check for equivalent or super groups.
+	if c, _, _ := mux.find(method, path); c != nil {
+		if c.Type() == GROUP {
+			g := c.(*group)
+			if pathsEqual(g.path, path) {
+				return g
+			} else {
+				path = trimPathPrefix(path, g.path, false)
+				return g.Group(path)
+			}
+		}
+	}
+
+	// Create new group
+	g := newGroup(method, path, mux)
+
+	// Gather subgroups, drop them from current mux/group,
+	// add them to new group
+	sub := make([]Compilable, 0)
+	m, ok := mux.matchers[method]
+	if ok {
+		m.ApplyAt(path, func(c Compilable) {
+			sub = append(sub, c)
+		})
+	} else {
+		m = &DefaultMatcher{}
+		mux.matchers[method] = m
+	}
+	for _, c := range sub {
+		c.Join(g)
+	}
+
+	// Add group to current mux/group
+	m.Add(path, g)
+	g.Compile()
+	return g
+}
+
 // Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
 func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 	//mux.chain = append(mux.chain, handler)
-	mux.chain.use(handler)
+	mux.chain.Use(handler)
 	for _, m := range mux.matchers {
-		m.Apply(func(object interface{}) {
-			ep := object.(*endpoint)
-			ep.muxChain.use(handler)
-			ep.compile()
+		m.Apply(func(c Compilable) {
+			c.Compile()
 		})
 	}
 
@@ -126,7 +191,7 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ep, params, err := mux.find(r.Method, r.URL.Path)
+	c, params, err := mux.find(r.Method, r.URL.Path)
 	if err == ErrNotFound {
 		mux.NotFound.ServeHTTP(w, r)
 		return
@@ -147,11 +212,11 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		insertParams(params, r.Form)
 	}
-	ep.ServeHTTP(w, r)
+	c.ServeHTTP(w, r)
 }
 
-// Find attempts to find the endpoint matching the passed in method+path
-func (mux *PathMuxer) find(method, path string) (*endpoint, []Param, error) {
+// Find attempts to find the Compilable matching the passed in method+path
+func (mux *PathMuxer) find(method, path string) (Compilable, []Param, error) {
 	m, ok := mux.matchers[method]
 	if !ok {
 		return nil, nil, ErrNotImplemented
@@ -161,7 +226,7 @@ func (mux *PathMuxer) find(method, path string) (*endpoint, []Param, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return result.Data().(*endpoint), result.Params(), nil
+	return result.Data(), result.Params(), nil
 }
 
 // -----------------------------
@@ -236,4 +301,177 @@ func handleTrailingSlash(p string) string {
 
 	p += "/"
 	return p
+}
+
+// checks if two paths are equal but
+// counts wildcard segments (/{...}) as
+// equivalent
+func pathsEqual(p1, p2 string) bool {
+	if len(p1) != len(p2) {
+		return false
+	}
+
+	i := 0
+	j := 0
+	m := 0
+	n := 0
+
+	for i < len(p1) && j < len(p2) {
+		a := p1[i]
+		b := p2[j]
+
+		if p1[i] == '{' && (i == 0 || p1[i-1] == '/') {
+			// possible start to p1 wc
+			wildA := false
+			for m = i + 1; m < len(p1) && p1[m] != '/'; m++ {
+				if m == len(p1)-1 && p1[m] == '}' {
+					wildA = true
+					break
+				} else if m < len(p1)-1 && p1[m] == '}' && p1[m+1] == '/' {
+					wildA = true
+					break
+				}
+			}
+			if !wildA {
+				if b == a {
+					// No closing brace so no wild but b and a still match
+					// so continue
+					i++
+					j++
+					continue
+				}
+				// No wild and no match so break
+				return false
+			}
+			if b != '{' || (b == '{' && j > 0 && p2[j-1] != '/') {
+				// No possible start to p2 wc ergo no match
+				// so break here
+				return false
+			} else {
+				// possible start to p2 wc
+				wildB := false
+				for n = j + 1; j < len(p2) && p2[n] != '/'; n++ {
+					if n == len(p2)-1 && p2[n] == '}' {
+						// Closing brace found at end of p2
+						wildB = true
+						break
+					} else if n < len(p2)-1 && p2[n] == '}' && p2[n+1] == '/' {
+						// Closing brace found with more runes to go
+						wildB = true
+						break
+					}
+				}
+				if !wildB {
+					// No brace ergo no p2 wc ergo no match
+					// so break here
+					return false
+				}
+				i = m
+				j = n
+			}
+		} else if a != b {
+			return false
+		}
+		i++
+		j++
+	}
+	return true
+}
+
+// Trims a path prefix but counts wildcard segments (/{...})
+// as equivalent. If the prefix cannot be found, no trimming
+// is done. (skipWild: true means /{...} matches anything)
+func trimPathPrefix(path, prefix string, skipWild bool) string {
+	i := 0
+	j := 0
+	m := 0
+	n := 0
+	for i < len(prefix) && j < len(path) {
+
+		a := prefix[i]
+		b := path[j]
+
+		if a == '{' && (i == 0 || prefix[i-1] == '/') {
+			// Possible start to prefix wc
+			wildA := false
+			for m = i + 1; m < len(prefix) && prefix[m] != '/'; m++ {
+				if m == len(prefix)-1 && prefix[m] == '}' {
+					// Closing brace found at end of prefix.
+					wildA = true
+					break
+				} else if m < len(prefix)-1 && prefix[m] == '}' && prefix[m+1] == '/' {
+					// Closing brace found with more runes to go
+					wildA = true
+					break
+				}
+			}
+			if !wildA {
+				if b == a {
+					// No closing brace so no wild but b and a still match
+					// so continue
+					i++
+					j++
+					continue
+				}
+				// No wild and no a b match so break
+				return path
+			}
+			if b != '{' || (b == '{' && j > 0 && path[j-1] != '/') {
+				// No possible start to path wc ergo no match
+				if skipWild {
+					// Skipping wilds so fast foward to next segment
+					for ; i < len(prefix) && prefix[i] != '/'; i++ {
+					}
+					for ; j < len(path) && path[j] != '/'; j++ {
+					}
+					continue
+				}
+				// Not skipping wilds so no match ergo break here
+				return path
+			} else {
+				// Possible start to path wc
+				wildB := false
+				for n = j + 1; j < len(path) && path[n] != '/'; n++ {
+					if n == len(path)-1 && path[n] == '}' {
+						// Closing brace found at end of path
+						wildB = true
+						break
+					} else if n < len(path)-1 && path[n] == '}' && path[n+1] == '/' {
+						// Closing brace found with more runes to go
+						wildB = true
+						break
+					}
+				}
+				if !wildB {
+					// No brace ergo no path wc ergo no match
+					if skipWild {
+						// Skipping wild keep on rolling
+						for ; i < len(prefix) && prefix[i] != '/'; i++ {
+						}
+						for ; j < len(path) && path[j] != '/'; j++ {
+						}
+						continue
+					}
+					// Not skipping break here
+					return path
+				}
+				i = m
+				j = n
+			}
+		} else if a != b {
+			return path
+		}
+		i++
+		j++
+	}
+
+	if i < len(prefix) {
+		return path
+	}
+
+	var buf bytes.Buffer
+	for ; j < len(path); j++ {
+		buf.WriteRune(rune(path[j]))
+	}
+	return buf.String()
 }

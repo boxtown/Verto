@@ -1,8 +1,9 @@
-package verto
+package plugins
 
 import (
 	"compress/flate"
 	"compress/gzip"
+	"github.com/boxtown/verto"
 	"io"
 	"net/http"
 	"strings"
@@ -30,11 +31,11 @@ func (w compressionWriter) WriteHeader(code int) {
 
 // CompressionPlugin returns a VertoPluginFunc that handles
 // gzip/deflate encoding.
-func CompressionPlugin() PluginFunc {
-	return PluginFunc(compressionFunc)
+func CompressionPlugin() verto.PluginFunc {
+	return verto.PluginFunc(compressionFunc)
 }
 
-func compressionFunc(c *Context, next http.HandlerFunc) {
+func compressionFunc(c *verto.Context, next http.HandlerFunc) {
 	r := c.Request
 	w := c.Response
 

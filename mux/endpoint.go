@@ -23,62 +23,79 @@ type Endpoint interface {
 // endpoint is a private struct used to keep track of handlers
 // and plugins per method+path.
 type endpoint struct {
-	handler  http.Handler
-	groups   []*Group
-	muxChain *plugins
-	chain    *plugins
-	compiled *plugins
+	method string
+	path   string
+
+	parent  *group
+	mux     *PathMuxer
+	handler http.Handler
+
+	chain    *Plugins
+	compiled *Plugins
 }
 
 // returns a fully initialized endpoint with handler
 // as the http handler
-func newEndpoint(handler http.Handler) *endpoint {
+func newEndpoint(method, path string, mux *PathMuxer, handler http.Handler) *endpoint {
 	ep := &endpoint{
-		handler:  handler,
-		muxChain: newPlugins(),
-		chain:    newPlugins(),
+		method:  method,
+		path:    path,
+		mux:     mux,
+		handler: handler,
+		chain:   NewPlugins(),
 	}
-	ep.compile()
+	ep.Compile()
 	return ep
 }
 
-// compiles the plugins of the mux, all groups,
-// and the endpoint into one chain used for running.
-// this function is called on every change to a chain.
-func (ep *endpoint) compile() {
-	ep.compiled = newPlugins()
-	if ep.muxChain.length > 0 {
-		ep.compiled.link(ep.muxChain.deepCopy())
+// compiles the chain of handlers for this endpoint
+// with the passed in parentChain
+func (ep *endpoint) Compile() {
+	ep.compiled = NewPlugins()
+	if ep.parent != nil {
+		// parent exists so request copy from parent
+		ep.compiled.Link(ep.parent.compiled.DeepCopy())
+	} else if ep.mux != nil {
+		// no parent so request copy from muxer
+		ep.compiled.Link(ep.mux.chain.DeepCopy())
 	}
-	if ep.groups != nil {
-		for _, g := range ep.groups {
-			ep.compiled.link(g.compiled.deepCopy())
-		}
-	}
-	if ep.chain.length > 0 {
-		ep.compiled.link(ep.chain.deepCopy())
-	}
-	ep.compiled.use(PluginFunc(
+	ep.compiled.Link(ep.chain.DeepCopy())
+	ep.compiled.Use(PluginFunc(
 		func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 			ep.handler.ServeHTTP(w, r)
 		},
 	))
 }
 
-// ServeHTTP delegates to the appropriate handler based on
-// the request method or calls the Not Implemented handler if
-// the desired method handler does not exist. If there is a method-appropriate
-// chain of plugins, those will be run first.
+// Join sets a new group as parent and adjusts
+// the endpoint's paths accordingly.
+func (ep *endpoint) Join(parent *group) {
+	if ep.parent != nil {
+		ep.parent.matcher.Drop(ep.path)
+	} else if ep.mux != nil {
+		ep.mux.matchers[ep.method].Drop(ep.path)
+	}
+	ep.parent = parent
+	ep.path = trimPathPrefix(ep.path, parent.path, false)
+	parent.matcher.Add(ep.path, ep)
+}
+
+// ServeHTTP runs the compiled chain of handlers for this endpoint.
 func (ep *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ep.compiled.run(w, r)
+	ep.compiled.Run(w, r)
+}
+
+// Type returns the type of Compilable this is
+func (ep *endpoint) Type() CType {
+	return ENDPOINT
 }
 
 // Use adds a PluginHandler onto the end of the chain of plugins
 // for a node.
 func (ep *endpoint) Use(handler PluginHandler) Endpoint {
 	//ep.chain = append(ep.chain, handler)
-	ep.chain.use(handler)
-	ep.compile()
+	ep.chain.Use(handler)
+	ep.Compile()
 	return ep
 }
 
