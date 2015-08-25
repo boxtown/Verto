@@ -44,8 +44,8 @@ type group struct {
 	mux     *PathMuxer
 	matcher *matcher
 
-	chain    *Plugins
-	compiled *Plugins
+	chain    *plugins
+	compiled *plugins
 }
 
 // newGroup returns a group with
@@ -58,8 +58,8 @@ func newGroup(method, path string, mux *PathMuxer) *group {
 		fullPath: path,
 		mux:      mux,
 		matcher:  &matcher{},
-		chain:    NewPlugins(),
-		compiled: NewPlugins(),
+		chain:    newPlugins(),
+		compiled: newPlugins(),
 	}
 }
 
@@ -160,7 +160,7 @@ func (g *group) Group(path string) Group {
 // for this group and then recompiles all chains
 // in the subtree of group
 func (g *group) Use(handler PluginHandler) Group {
-	g.chain.Use(handler)
+	g.chain.use(handler)
 	g.compile()
 	return g
 }
@@ -186,16 +186,16 @@ func (g *group) UseHandler(handler http.Handler) Group {
 // compiled chains. Recompiles all chains in the
 // subtree of group
 func (g *group) compile() {
-	g.compiled = NewPlugins()
+	g.compiled = newPlugins()
 	if g.parent != nil {
 		// parent exists so request copy from parent
-		g.compiled.Link(g.parent.compiled.DeepCopy())
+		g.compiled.link(g.parent.compiled.deepCopy())
 	} else if g.mux != nil {
 		// no parent so must be top level group, request
 		// copy from muxer
-		g.compiled.Link(g.mux.chain.DeepCopy())
+		g.compiled.link(g.mux.chain.deepCopy())
 	}
-	g.compiled.Link(g.chain.DeepCopy())
+	g.compiled.link(g.chain.deepCopy())
 	g.matcher.apply(func(c compilable) {
 		c.compile()
 	})

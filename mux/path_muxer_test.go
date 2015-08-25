@@ -418,9 +418,9 @@ func TestPathMuxerUse(t *testing.T) {
 	}))
 
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/1", nil)
-	pm.chain.Run(nil, r)
+	pm.chain.run(nil, r)
 	r, _ = http.NewRequest("GET", "http://test.com/path/to/2", nil)
-	pm.chain.Run(nil, r)
+	pm.chain.run(nil, r)
 }
 
 func TestPathMuxerUseHandler(t *testing.T) {
@@ -448,7 +448,7 @@ func TestPathMuxerUseHandler(t *testing.T) {
 	}))
 
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
-	pm.chain.Run(nil, r)
+	pm.chain.run(nil, r)
 }
 
 func TestNotFoundHandler(t *testing.T) {

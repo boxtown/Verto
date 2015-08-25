@@ -26,14 +26,14 @@ func TestPluginRun(t *testing.T) {
 		tVal2 = "B"
 	})
 
-	p := &Plugin{}
-	p2 := &Plugin{}
+	p := &plugin{}
+	p2 := &plugin{}
 
 	p.handler = h
 	p2.handler = h2
 	p.next = p2
 
-	p.Run(nil, nil)
+	p.run(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	} else if tVal2 != "B" {
@@ -62,8 +62,8 @@ func TestPluginsUse(t *testing.T) {
 		tVal2 = "B"
 	})
 
-	p := NewPlugins()
-	p.Use(h)
+	p := newPlugins()
+	p.use(h)
 	if p.length != 1 {
 		t.Errorf(err)
 	}
@@ -71,14 +71,14 @@ func TestPluginsUse(t *testing.T) {
 		t.Errorf(err)
 	}
 
-	p.Use(h2)
+	p.use(h2)
 	if p.length != 2 {
 		t.Errorf(err)
 	}
 	if p.head == p.tail {
 		t.Errorf(err)
 	}
-	p.Run(nil, nil)
+	p.run(nil, nil)
 
 	if tVal != "A" {
 		t.Errorf(err)
@@ -114,43 +114,43 @@ func TestPluginsDeepCopy(t *testing.T) {
 		tVal = "C"
 	})
 
-	p := NewPlugins()
-	p2 := p.DeepCopy()
+	p := newPlugins()
+	p2 := p.deepCopy()
 
 	// Test Blank run
-	p2.Run(nil, nil)
+	p2.run(nil, nil)
 
-	p.Use(h)
+	p.use(h)
 
 	// Test copy one
-	p2 = p.DeepCopy()
+	p2 = p.deepCopy()
 	if p2.length != 1 {
 		t.Errorf(err)
 	}
-	p2.Run(nil, nil)
+	p2.run(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
 
 	// Test copy multiple
-	p.Use(h2)
-	p2 = p.DeepCopy()
+	p.use(h2)
+	p2 = p.deepCopy()
 	if p2.length != 2 {
 		t.Errorf(err)
 	}
-	p2.Run(nil, nil)
+	p2.run(nil, nil)
 	if tVal != "B" {
 		t.Errorf(err)
 	}
 
 	// Test uniqueness
 	tVal = ""
-	p2.Use(h3)
-	p.Run(nil, nil)
+	p2.use(h3)
+	p.run(nil, nil)
 	if tVal != "B" {
 		t.Errorf(err)
 	}
-	p2.Run(nil, nil)
+	p2.run(nil, nil)
 	if tVal != "C" {
 		t.Errorf(err)
 	}
@@ -186,66 +186,66 @@ func TestPluginsLink(t *testing.T) {
 		tVal = "D"
 	})
 
-	p := NewPlugins()
-	p2 := NewPlugins()
+	p := newPlugins()
+	p2 := newPlugins()
 
 	// link empty
-	p.Link(p2)
+	p.link(p2)
 	if p.length != 0 {
 		t.Errorf(err)
 	}
 
 	// link empty to one
-	p2.Use(h)
-	p.Link(p2)
+	p2.use(h)
+	p.link(p2)
 	if p.length != 1 {
 		t.Errorf(err)
 	}
-	p.Run(nil, nil)
+	p.run(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
 
 	// link one to empty
 	tVal = ""
-	p = NewPlugins()
-	p2.Link(p)
+	p = newPlugins()
+	p2.link(p)
 	if p2.length != 1 {
 		t.Errorf(err)
 	}
-	p2.Run(nil, nil)
+	p2.run(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
 
 	// link one to one
 	tVal = ""
-	p = NewPlugins()
-	p2 = NewPlugins()
-	p.Use(h)
-	p2.Use(h2)
-	p.Link(p2)
+	p = newPlugins()
+	p2 = newPlugins()
+	p.use(h)
+	p2.use(h2)
+	p.link(p2)
 	if p.length != 2 {
 		t.Errorf(err)
 	}
-	p.Run(nil, nil)
+	p.run(nil, nil)
 	if tVal != "B" {
 		t.Errorf(err)
 	}
 
 	// link many to many
 	tVal = ""
-	p = NewPlugins()
-	p2 = NewPlugins()
-	p.Use(h)
-	p.Use(h2)
-	p2.Use(h3)
-	p2.Use(h4)
-	p.Link(p2)
+	p = newPlugins()
+	p2 = newPlugins()
+	p.use(h)
+	p.use(h2)
+	p2.use(h3)
+	p2.use(h4)
+	p.link(p2)
 	if p.length != 4 {
 		t.Errorf(err)
 	}
-	p.Run(nil, nil)
+	p.run(nil, nil)
 	if tVal != "D" {
 		t.Errorf(err)
 	}

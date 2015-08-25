@@ -22,8 +22,8 @@ import (
 // Paths can contain named parameters which can be restricted by regexes.
 // PathMuxer also allows the use of global and per-route plugins.
 type PathMuxer struct {
-	chain    *Plugins
-	compiled *Plugins
+	chain    *plugins
+	compiled *plugins
 	matchers map[string]*matcher
 
 	NotFound       http.Handler
@@ -39,7 +39,7 @@ type PathMuxer struct {
 // New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
-		chain:    NewPlugins(),
+		chain:    newPlugins(),
 		matchers: make(map[string]*matcher),
 
 		NotFound:       NotFoundHandler{},
@@ -160,7 +160,7 @@ func (mux *PathMuxer) Group(method, path string) Group {
 // plugins for the muxer.
 func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 	//mux.chain = append(mux.chain, handler)
-	mux.chain.Use(handler)
+	mux.chain.use(handler)
 	for _, m := range mux.matchers {
 		m.apply(func(c compilable) {
 			c.compile()
