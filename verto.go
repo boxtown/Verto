@@ -79,20 +79,20 @@ type Endpoint struct {
 	v *Verto
 }
 
-// Use is a wrapper around mux.Endpoint.Use that returns a NodeWrapper instead
+// Use is a wrapper around mux.Endpoint.Use that returns an Endpoint instead
 // of a mux.Endpoint
 func (ep *Endpoint) Use(handler mux.PluginHandler) *Endpoint {
 	return &Endpoint{ep.Endpoint.Use(handler), ep.v}
 }
 
-// UseHandler is a wrapper around mux.Endpoint.UseHandler that returns a NodeWrapper instead
+// UseHandler is a wrapper around mux.Endpoint.UseHandler that returns an Endpoint instead
 // of a mux.Endpoint
 func (ep *Endpoint) UseHandler(handler http.Handler) *Endpoint {
 	return &Endpoint{ep.Endpoint.UseHandler(handler), ep.v}
 }
 
 // UseVerto wraps a VertoPlugin as a mux.PluginHandler and injects v's injections
-// into the context. Returns the NodeWrapper for chaining.
+// into the context. Returns the Endpoint for chaining.
 func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := &Context{
@@ -104,8 +104,60 @@ func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
 
 		plugin.Handle(c, next)
 	}
-
 	return &Endpoint{ep.Endpoint.Use(mux.PluginFunc(pluginFunc)), ep.v}
+}
+
+// Group is a wrapper around mux.Group that allows the use of Verto plugins.
+type Group struct {
+	g mux.Group
+	v *Verto
+}
+
+// Add is a wrapper around mux.Group.Add that returns an Endpoint
+// instead of a mux.Endpoint
+func (g *Group) Add(path string, handler http.Handler) *Endpoint {
+	return &Endpoint{g.g.Add(path, handler), g.v}
+}
+
+// AddFunc is a wrapper around mux.Group.AddFunc that returns an
+// Endpoint instead of a mux.Endpoint
+func (g *Group) AddFunc(path string, f func(w http.ResponseWriter, r *http.Request)) *Endpoint {
+	return &Endpoint{g.g.AddFunc(path, f), g.v}
+}
+
+// Group is a wrapper around mux.Group.Group that returns
+// a Group instead of a mux.Group
+func (g *Group) Group(path string) *Group {
+	return &Group{g.g.Group(path), g.v}
+}
+
+// Use is a wrapper around mux.Group.Use that returns
+// a Group instead of a mux.Group
+func (g *Group) Use(handler mux.PluginHandler) *Group {
+	return &Group{g.g.Use(handler), g.v}
+}
+
+// UseHandler is a wrapper around mux.Group.UseHandler that
+// returns a Group instead of a mux.Group
+func (g *Group) UseHandler(handler http.Handler) *Group {
+	return &Group{g.g.UseHandler(handler), g.v}
+}
+
+// UseVerto wraps plugin as a mux.PluginFunc and calls
+// mux.Group.Use. UseVerto returns the Group for chaining
+// Use calls.
+func (g *Group) UseVerto(plugin Plugin) *Group {
+	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		c := &Context{
+			Response:   w,
+			Request:    r,
+			Injections: g.v.Injections,
+			Logger:     g.v.Logger,
+		}
+
+		plugin.Handle(c, next)
+	}
+	return &Group{g.g.Use(mux.PluginFunc(pluginFunc)), g.v}
 }
 
 // ResourceFunc is the Verto-specific function for endpoint resource handling.
@@ -194,6 +246,10 @@ func (v *Verto) AddHandler(
 	handler http.Handler) *Endpoint {
 
 	return &Endpoint{v.muxer.Add(method, path, handler), v}
+}
+
+func (v *Verto) Group(method, path string) *Group {
+	return &Group{v.muxer.Group(method, path), v}
 }
 
 // Get is a wrapper function around Add() that sets the method
