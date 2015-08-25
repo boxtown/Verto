@@ -78,7 +78,7 @@ func (g *group) Add(path string, handler http.Handler) Endpoint {
 	// If it exists, set handler for endpoint. Otherwise
 	// create new endpoint and add it to the muxer.
 	var ep *endpoint
-	results, err := g.matcher.matchNoRegex(path)
+	results, err := g.matcher.matchExplicit(path)
 	if err != nil {
 		ep = newEndpoint(g.method, path, handler)
 		ep.parent = g
@@ -129,7 +129,7 @@ func (g *group) Group(path string) Group {
 	}
 
 	// Check for equivalent or super groups.
-	if c, _ := g.matcher.matchNoRegex(path); c != nil {
+	if c, _ := g.matcher.matchExplicit(path); c != nil {
 		if c.data().cType() == GROUP {
 			ng := c.data().(*group)
 			if pathsEqual(ng.path, path) {

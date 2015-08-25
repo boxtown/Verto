@@ -289,7 +289,7 @@ func (n *matcherNode) drop(path string) {
 }
 
 // Private matching function that contains all the matching logic
-func (n *matcherNode) match(path string, regex bool, maxParams int) (results, error) {
+func (n *matcherNode) match(path string, explicit bool, maxParams int) (results, error) {
 	pi := pathIndexer{path: path}
 	results := newResults(maxParams)
 	var mrg compilable
@@ -306,6 +306,20 @@ func (n *matcherNode) match(path string, regex bool, maxParams int) (results, er
 				}
 				if n.parent.wildChild != nil && n.parent.wildChild.data != nil {
 					return nil, ErrRedirectSlash
+				}
+				return nil, ErrNotFound
+			}
+
+			// Explicit match so don't check for wildcards if
+			// segment isn't a wildcard segment
+			if explicit && (len(s) == 0 || s[0] != '{' || s[len(s)-1] != '}') {
+				if n.catchAll != nil {
+					n = n.catchAll
+					break
+				}
+				if mrg != nil {
+					results.c = mrg
+					return results, nil
 				}
 				return nil, ErrNotFound
 			}
@@ -327,7 +341,7 @@ func (n *matcherNode) match(path string, regex bool, maxParams int) (results, er
 			}
 
 			// Found wildcard, check the regex constraint if necessary
-			if regex && child.regex != nil && !child.regex.MatchString(s) {
+			if !explicit && child.regex != nil && !child.regex.MatchString(s) {
 				return nil, ErrNotFound
 			}
 			results.addPair(child.wildcard, s)
@@ -412,16 +426,16 @@ func (m *matcher) match(path string) (results, error) {
 	if m.root == nil {
 		return nil, ErrNotFound
 	}
-	return m.root.match(path, true, m.mp)
+	return m.root.match(path, false, m.mp)
 }
 
 // MatchNoRegex performs in the same manner as Match except that it doesn't
 // check regex restrictions on wildcard parameters.
-func (m *matcher) matchNoRegex(path string) (results, error) {
+func (m *matcher) matchExplicit(path string) (results, error) {
 	if m.root == nil {
 		return nil, ErrNotFound
 	}
-	return m.root.match(path, false, m.mp)
+	return m.root.match(path, true, m.mp)
 }
 
 // MaxParams returns the maximum possible number of

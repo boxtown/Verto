@@ -210,14 +210,18 @@ func TestMatcherMatch(t *testing.T) {
 		t.Errorf(err)
 	}
 
-	// Test ignore regex
-	results, e = m.matchNoRegex("test")
+	// Test explicit match
+	_, e = m.matchExplicit("test")
+	if e == nil {
+		t.Errorf(err)
+	}
+	results, e = m.matchExplicit("{test}")
 	if e != nil {
 		t.Errorf(e.Error())
 	}
 	found = false
 	for _, v := range results.params() {
-		if v.key == "wc" && v.value == "test" {
+		if v.key == "wc" && v.value == "{test}" {
 			found = true
 		}
 	}

@@ -160,9 +160,22 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "A"
 		},
 	))
+	pm.Add("POST", "/path/another/handler", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			tVal = "B"
+		},
+	))
+
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
 	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
+		t.Errorf(err)
+	}
+
+	tVal = ""
+	r, _ = http.NewRequest("GET", "http://test.com/path/another/handler", nil)
+	pm.methods["POST"].exec(nil, r)
+	if tVal != "B" {
 		t.Errorf(err)
 	}
 
@@ -172,6 +185,7 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "B"
 		},
 	))
+	r, _ = http.NewRequest("GET", "http://test.com/path/to/handler", nil)
 	pm.methods["GET"].exec(nil, r)
 	if tVal != "B" {
 		t.Errorf(err)
