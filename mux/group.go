@@ -42,7 +42,7 @@ type group struct {
 
 	parent  *group
 	mux     *PathMuxer
-	matcher Matcher
+	matcher *matcher
 
 	chain    *Plugins
 	compiled *Plugins
@@ -57,7 +57,7 @@ func newGroup(method, path string, mux *PathMuxer) *group {
 		path:     path,
 		fullPath: path,
 		mux:      mux,
-		matcher:  &DefaultMatcher{},
+		matcher:  &matcher{},
 		chain:    NewPlugins(),
 		compiled: NewPlugins(),
 	}
@@ -76,18 +76,18 @@ func (g *group) Add(path string, handler http.Handler) Endpoint {
 	// If it exists, set handler for endpoint. Otherwise
 	// create new endpoint and add it to the muxer.
 	var ep *endpoint
-	results, err := g.matcher.MatchNoRegex(path)
+	results, err := g.matcher.matchNoRegex(path)
 	if err != nil {
 		ep = newEndpoint(g.method, path, g.mux, handler)
 		ep.parent = g
-		ep.Compile()
-		g.matcher.Add(path, ep)
-	} else if results.Data().Type() == GROUP {
-		g = results.Data().(*group)
+		ep.compile()
+		g.matcher.add(path, ep)
+	} else if results.data().cType() == GROUP {
+		g = results.data().(*group)
 		path = trimPathPrefix(path, g.path, false)
 		return g.Add(path, handler)
 	} else {
-		ep = results.Data().(*endpoint)
+		ep = results.data().(*endpoint)
 		ep.handler = handler
 	}
 	return ep
@@ -125,9 +125,9 @@ func (g *group) Group(path string) Group {
 	}
 
 	// Check for equivalent or super groups.
-	if c, _ := g.matcher.MatchNoRegex(path); c != nil {
-		if c.Data().Type() == GROUP {
-			ng := c.Data().(*group)
+	if c, _ := g.matcher.matchNoRegex(path); c != nil {
+		if c.data().cType() == GROUP {
+			ng := c.data().(*group)
 			if pathsEqual(ng.path, path) {
 				return ng
 			} else {
@@ -142,17 +142,17 @@ func (g *group) Group(path string) Group {
 
 	// Gather subgroups, drop them from current mux/group,
 	// add them to new group
-	sub := make([]Compilable, 0)
-	g.matcher.ApplyAt(path, func(c Compilable) {
+	sub := make([]compilable, 0)
+	g.matcher.applyAt(path, func(c compilable) {
 		sub = append(sub, c)
 	})
 	for _, c := range sub {
-		c.Join(ng)
+		c.join(ng)
 	}
 
 	// Add group to current mux/group
-	ng.Join(g)
-	ng.Compile()
+	ng.join(g)
+	ng.compile()
 	return ng
 }
 
@@ -161,7 +161,7 @@ func (g *group) Group(path string) Group {
 // in the subtree of group
 func (g *group) Use(handler PluginHandler) Group {
 	g.chain.Use(handler)
-	g.Compile()
+	g.compile()
 	return g
 }
 
@@ -185,7 +185,7 @@ func (g *group) UseHandler(handler http.Handler) Group {
 // look towards the parent group or muxer for their
 // compiled chains. Recompiles all chains in the
 // subtree of group
-func (g *group) Compile() {
+func (g *group) compile() {
 	g.compiled = NewPlugins()
 	if g.parent != nil {
 		// parent exists so request copy from parent
@@ -196,36 +196,36 @@ func (g *group) Compile() {
 		g.compiled.Link(g.mux.chain.DeepCopy())
 	}
 	g.compiled.Link(g.chain.DeepCopy())
-	g.matcher.Apply(func(c Compilable) {
-		c.Compile()
+	g.matcher.apply(func(c compilable) {
+		c.compile()
 	})
 }
 
 // Join sets a new group as parent and adjusts
 // the group's paths accordingly.
-func (g *group) Join(parent *group) {
+func (g *group) join(parent *group) {
 	if g.parent != nil {
-		g.parent.matcher.Drop(g.path)
+		g.parent.matcher.drop(g.path)
 	} else if g.mux != nil {
-		g.mux.matchers[g.method].Drop(g.path)
+		g.mux.matchers[g.method].drop(g.path)
 	}
 	g.parent = parent
 	g.path = trimPathPrefix(g.path, parent.path, false)
 	g.fullPath = parent.fullPath + g.path
-	parent.matcher.Add(g.path, g)
+	parent.matcher.add(g.path, g)
 }
 
 // ServeHTTP attempts to find the correct endpoint for the request
 // deferring to subgroups if need be. If the correct endpoint is found,
 // the associated handler is run. Otherwise, the proper error response
 // is returned.
-func (g *group) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (g *group) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	path := trimPathPrefix(r.URL.Path, g.fullPath, true)
 	if path[0] != '/' {
 		path = "/" + path
 	}
 
-	result, err := g.matcher.Match(path)
+	result, err := g.matcher.match(path)
 	if err == ErrNotFound {
 		g.mux.NotFound.ServeHTTP(w, r)
 		return
@@ -239,15 +239,15 @@ func (g *group) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(result.Params()) > 0 {
+	if len(result.params()) > 0 {
 		r.ParseForm()
-		insertParams(result.Params(), r.Form)
+		insertParams(result.params(), r.Form)
 	}
-	result.Data().ServeHTTP(w, r)
+	result.data().serveHTTP(w, r)
 }
 
 // Type returns the type of Compilable
 // group is
-func (g *group) Type() CType {
+func (g *group) cType() cType {
 	return GROUP
 }

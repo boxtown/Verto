@@ -4,16 +4,16 @@ import (
 	"net/http"
 )
 
-type CType int
+type cType int
 
 const (
-	GROUP    CType = 0
-	ENDPOINT CType = 1
+	GROUP    cType = 0
+	ENDPOINT cType = 1
 )
 
-type Compilable interface {
-	Compile()
-	Join(parent *group)
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
-	Type() CType
+type compilable interface {
+	compile()
+	join(parent *group)
+	serveHTTP(w http.ResponseWriter, r *http.Request)
+	cType() cType
 }

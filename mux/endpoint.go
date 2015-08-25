@@ -44,13 +44,13 @@ func newEndpoint(method, path string, mux *PathMuxer, handler http.Handler) *end
 		handler: handler,
 		chain:   NewPlugins(),
 	}
-	ep.Compile()
+	ep.compile()
 	return ep
 }
 
 // compiles the chain of handlers for this endpoint
 // with the passed in parentChain
-func (ep *endpoint) Compile() {
+func (ep *endpoint) compile() {
 	ep.compiled = NewPlugins()
 	if ep.parent != nil {
 		// parent exists so request copy from parent
@@ -69,24 +69,24 @@ func (ep *endpoint) Compile() {
 
 // Join sets a new group as parent and adjusts
 // the endpoint's paths accordingly.
-func (ep *endpoint) Join(parent *group) {
+func (ep *endpoint) join(parent *group) {
 	if ep.parent != nil {
-		ep.parent.matcher.Drop(ep.path)
+		ep.parent.matcher.drop(ep.path)
 	} else if ep.mux != nil {
-		ep.mux.matchers[ep.method].Drop(ep.path)
+		ep.mux.matchers[ep.method].drop(ep.path)
 	}
 	ep.parent = parent
 	ep.path = trimPathPrefix(ep.path, parent.path, false)
-	parent.matcher.Add(ep.path, ep)
+	parent.matcher.add(ep.path, ep)
 }
 
 // ServeHTTP runs the compiled chain of handlers for this endpoint.
-func (ep *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (ep *endpoint) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	ep.compiled.Run(w, r)
 }
 
 // Type returns the type of Compilable this is
-func (ep *endpoint) Type() CType {
+func (ep *endpoint) cType() cType {
 	return ENDPOINT
 }
 
@@ -95,7 +95,7 @@ func (ep *endpoint) Type() CType {
 func (ep *endpoint) Use(handler PluginHandler) Endpoint {
 	//ep.chain = append(ep.chain, handler)
 	ep.chain.Use(handler)
-	ep.Compile()
+	ep.compile()
 	return ep
 }
 

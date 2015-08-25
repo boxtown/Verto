@@ -9,14 +9,14 @@ import (
 // ---------- Mux Errors ----------
 // --------------------------------
 
-// ErrNotFound gets returned by Matcher if a path could not be matched.
+// ErrNotFound gets returned if a path could not be matched.
 var ErrNotFound = errors.New("mux: handler not found")
 
-// ErrNotImplemented gets returned by Matcher if a path could be matched
+// ErrNotImplemented gets returned if a path could be matched
 // but the method could not be found.
 var ErrNotImplemented = errors.New("mux: handler not implemented")
 
-// ErrRedirectSlash gets returned by Matcher if a path could not be matched
+// ErrRedirectSlash gets returned if a path could not be matched
 // but a path with (without) a slash exists.
 var ErrRedirectSlash = errors.New("mux: redirect trailing slash")
 
@@ -29,59 +29,22 @@ const empty string = ""
 // ---------- Param ----------
 // ---------------------------
 
-// Param represents a Key-Value HTTP parameter pair
-type Param struct {
-	Key   string
-	Value string
+// param represents a Key-Value HTTP parameter pair
+type param struct {
+	key   string
+	value string
 }
 
 // ---------- Results ----------
 // -----------------------------
 
-// Results is an interface for returning results from the matcher
-type Results interface {
+// results is an interface for returning results from the matcher
+type results interface {
 	// Returns the resulting data from the path match
-	Data() Compilable
+	data() compilable
 
 	// Returns all parameter key-value pairs as a slice
-	Params() []Param
-}
-
-// ---------- Matcher ----------
-// -----------------------------
-
-// Matcher is an interface for a matcher that matches paths to objects.
-// { } denotes a wildcard segment. ^ denotes a catch-all segment.
-type Matcher interface {
-	// Add adds an object to the matcher registered to the path.
-	Add(path string, c Compilable)
-
-	// Apply applies a function f to all non-nil object stored
-	// in Matcher
-	Apply(f func(c Compilable))
-
-	// ApplyAt applies a function f to all objects stored in
-	// path and any existing subpaths. Path traversal automatically
-	// stops at catch-all segments. Wildcards must be explicitly matched
-	// with {...} segments. If path is not found, f is not applied.
-	ApplyAt(path string, f func(c Compilable))
-
-	// Drops the path subtree rooted at path.
-	Drop(path string)
-
-	// Match returns the the Compilable and values associated with
-	// the path or an error if the path isn't cannot be found.
-	// Should return ErrRedirectSlash if a trailing slash redirect
-	// is possible. If there is a matching super group of the path,
-	// the super group is returned.
-	Match(path string) (Results, error)
-
-	// MatchNoRegex performs the same as Match except without
-	// doing regex checking for wildcard parameters.
-	MatchNoRegex(path string) (Results, error)
-
-	// Returns the maximum possible number of wildcard parameters
-	MaxParams() int
+	params() []param
 }
 
 // ---------- matcherResults -----------
@@ -90,27 +53,27 @@ type Matcher interface {
 // matcherResults is a simple and efficient
 // implementation of the Results interface
 type matcherResults struct {
-	data  Compilable
-	pairs []Param
+	c compilable
+	p []param
 }
 
 func newResults(maxParams int) *matcherResults {
 	return &matcherResults{
-		pairs: make([]Param, 0, maxParams),
+		p: make([]param, 0, maxParams),
 	}
 }
 
 func (mr *matcherResults) addPair(key, value string) {
-	pair := Param{key, value}
-	mr.pairs = append(mr.pairs, pair)
+	pair := param{key, value}
+	mr.p = append(mr.p, pair)
 }
 
-func (mr *matcherResults) Data() Compilable {
-	return mr.data
+func (mr *matcherResults) data() compilable {
+	return mr.c
 }
 
-func (mr *matcherResults) Params() []Param {
-	return mr.pairs
+func (mr *matcherResults) params() []param {
+	return mr.p
 }
 
 // ---------- pathIndexer ----------
@@ -177,7 +140,7 @@ func (p *pathIndexer) next() string {
 // matcherNode is the k-ary node used in the
 // DefaultMatcher's tree
 type matcherNode struct {
-	data      Compilable
+	data      compilable
 	parent    *matcherNode
 	children  map[string]*matcherNode
 	wildChild *matcherNode
@@ -195,7 +158,7 @@ func newMatcherNode() *matcherNode {
 
 // Private function that adds object as data at path and returns
 // number of encountered path parameters
-func (n *matcherNode) add(path string, c Compilable) int {
+func (n *matcherNode) add(path string, c compilable) int {
 	pi := pathIndexer{path: path}
 	nparams := 0
 
@@ -257,7 +220,7 @@ func (n *matcherNode) add(path string, c Compilable) int {
 
 // Private apply function that applys f to the objects
 // at n and all its subpaths in BFS order
-func (n *matcherNode) apply(f func(c Compilable)) {
+func (n *matcherNode) apply(f func(c compilable)) {
 	queue := make([]*matcherNode, 1)
 	queue[0] = n
 
@@ -278,7 +241,7 @@ func (n *matcherNode) apply(f func(c Compilable)) {
 // traversal at catch-all. Wildcards must be explicitly matched.
 // If the path is not found, the function returns without applying
 // f.
-func (n *matcherNode) applyAt(path string, f func(c Compilable)) {
+func (n *matcherNode) applyAt(path string, f func(c compilable)) {
 	pi := pathIndexer{path: path}
 	for pi.hasNext() {
 		s := pi.next()
@@ -325,13 +288,11 @@ func (n *matcherNode) drop(path string) {
 	delete(n.parent.children, s)
 }
 
-var print = false
-
 // Private matching function that contains all the matching logic
-func (n *matcherNode) match(path string, regex bool, maxParams int) (Results, error) {
+func (n *matcherNode) match(path string, regex bool, maxParams int) (results, error) {
 	pi := pathIndexer{path: path}
 	results := newResults(maxParams)
-	var mrg Compilable
+	var mrg compilable
 
 	for pi.hasNext() {
 		s := pi.next()
@@ -359,7 +320,7 @@ func (n *matcherNode) match(path string, regex bool, maxParams int) (Results, er
 					break
 				}
 				if mrg != nil {
-					results.data = mrg
+					results.c = mrg
 					return results, nil
 				}
 				return nil, ErrNotFound
@@ -371,7 +332,7 @@ func (n *matcherNode) match(path string, regex bool, maxParams int) (Results, er
 			}
 			results.addPair(child.wildcard, s)
 		}
-		if child.data != nil && child.data.Type() == GROUP {
+		if child.data != nil && child.data.cType() == GROUP {
 			mrg = child.data
 		}
 		n = child
@@ -385,18 +346,18 @@ func (n *matcherNode) match(path string, regex bool, maxParams int) (Results, er
 		return nil, ErrNotFound
 	}
 
-	results.data = n.data
+	results.c = n.data
 	return results, nil
 }
 
 // ---------- DefaultMatcher ----------
 // ------------------------------------
 
-// DefaultMatcher is the default implementation
+// defaultMatcher is the default implementation
 // of the matcher interface.
-type DefaultMatcher struct {
-	root      *matcherNode
-	maxParams int
+type matcher struct {
+	root *matcherNode
+	mp   int
 }
 
 // Add registers an object with a specific path. Wildcard path
@@ -406,19 +367,19 @@ type DefaultMatcher struct {
 // and a regex after the inner string. Catch-all paths are denoted with
 // a '^'. Any path segments after a catch-all symbol are ignored as it
 // does not make any sense to have child paths of a catch-all path.
-func (m *DefaultMatcher) Add(path string, c Compilable) {
+func (m *matcher) add(path string, c compilable) {
 	if m.root == nil {
 		m.root = newMatcherNode()
 	}
 	nparams := m.root.add(path, c)
-	if nparams > m.maxParams {
-		m.maxParams = nparams
+	if nparams > m.mp {
+		m.mp = nparams
 	}
 }
 
 // Apply does a BFS traversal of the matcher tree and applies
 // function f to all non-nil objects stored in the tree
-func (m *DefaultMatcher) Apply(f func(c Compilable)) {
+func (m *matcher) apply(f func(c compilable)) {
 	if m.root == nil {
 		return
 	}
@@ -428,7 +389,7 @@ func (m *DefaultMatcher) Apply(f func(c Compilable)) {
 // Apply traverses the matcher tree until path is matched and then
 // applies f to all subpaths rooted at path including path. Traversal
 // automatically stops at a catch-all. Wildcards must be explicitly matched.
-func (m *DefaultMatcher) ApplyAt(path string, f func(c Compilable)) {
+func (m *matcher) applyAt(path string, f func(c compilable)) {
 	if m.root == nil {
 		return
 	}
@@ -436,7 +397,7 @@ func (m *DefaultMatcher) ApplyAt(path string, f func(c Compilable)) {
 }
 
 // Drop drops the subtree rooted at path
-func (m *DefaultMatcher) Drop(path string) {
+func (m *matcher) drop(path string) {
 	if m.root == nil {
 		return
 	}
@@ -447,24 +408,24 @@ func (m *DefaultMatcher) Drop(path string) {
 // Wildcard segments are observed. ErrNotFound is returned if no matching path
 // exists and a trailing slash redirect (tsr) isn't possible. ErrRedirect is returned
 // if no matching path exists but a tsr is possible.
-func (m *DefaultMatcher) Match(path string) (Results, error) {
+func (m *matcher) match(path string) (results, error) {
 	if m.root == nil {
 		return nil, ErrNotFound
 	}
-	return m.root.match(path, true, m.maxParams)
+	return m.root.match(path, true, m.mp)
 }
 
 // MatchNoRegex performs in the same manner as Match except that it doesn't
 // check regex restrictions on wildcard parameters.
-func (m *DefaultMatcher) MatchNoRegex(path string) (Results, error) {
+func (m *matcher) matchNoRegex(path string) (results, error) {
 	if m.root == nil {
 		return nil, ErrNotFound
 	}
-	return m.root.match(path, false, m.maxParams)
+	return m.root.match(path, false, m.mp)
 }
 
 // MaxParams returns the maximum possible number of
 // parameters in the Matcher based on the added paths.
-func (m *DefaultMatcher) MaxParams() int {
-	return m.maxParams
+func (m *matcher) maxParams() int {
+	return m.mp
 }

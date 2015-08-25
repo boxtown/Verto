@@ -24,7 +24,7 @@ import (
 type PathMuxer struct {
 	chain    *Plugins
 	compiled *Plugins
-	matchers map[string]Matcher
+	matchers map[string]*matcher
 
 	NotFound       http.Handler
 	NotImplemented http.Handler
@@ -40,7 +40,7 @@ type PathMuxer struct {
 func New() *PathMuxer {
 	muxer := PathMuxer{
 		chain:    NewPlugins(),
-		matchers: make(map[string]Matcher),
+		matchers: make(map[string]*matcher),
 
 		NotFound:       NotFoundHandler{},
 		NotImplemented: NotImplementedHandler{},
@@ -63,7 +63,7 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Endpoint {
 	// Grab matcher for method
 	m, ok := mux.matchers[method]
 	if !ok {
-		m = &DefaultMatcher{}
+		m = &matcher{}
 		mux.matchers[method] = m
 	}
 
@@ -71,17 +71,17 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Endpoint {
 	// If it exists, set handler for endpoint. Otherwise
 	// create new endpoint and add it to the muxer.
 	var ep *endpoint
-	results, err := m.MatchNoRegex(path)
+	results, err := m.matchNoRegex(path)
 	if err != nil {
 		ep = newEndpoint(method, path, mux, handler)
-		ep.Compile()
-		m.Add(path, ep)
-	} else if results.Data().Type() == GROUP {
-		g := results.Data().(*group)
+		ep.compile()
+		m.add(path, ep)
+	} else if results.data().cType() == GROUP {
+		g := results.data().(*group)
 		path = trimPathPrefix(path, g.path, false)
 		return g.Add(path, handler)
 	} else {
-		ep = results.Data().(*endpoint)
+		ep = results.data().(*endpoint)
 		ep.handler = handler
 	}
 	return ep
@@ -120,7 +120,7 @@ func (mux *PathMuxer) Group(method, path string) Group {
 
 	// Check for equivalent or super groups.
 	if c, _, _ := mux.find(method, path); c != nil {
-		if c.Type() == GROUP {
+		if c.cType() == GROUP {
 			g := c.(*group)
 			if pathsEqual(g.path, path) {
 				return g
@@ -136,23 +136,23 @@ func (mux *PathMuxer) Group(method, path string) Group {
 
 	// Gather subgroups, drop them from current mux/group,
 	// add them to new group
-	sub := make([]Compilable, 0)
+	sub := make([]compilable, 0)
 	m, ok := mux.matchers[method]
 	if ok {
-		m.ApplyAt(path, func(c Compilable) {
+		m.applyAt(path, func(c compilable) {
 			sub = append(sub, c)
 		})
 	} else {
-		m = &DefaultMatcher{}
+		m = &matcher{}
 		mux.matchers[method] = m
 	}
 	for _, c := range sub {
-		c.Join(g)
+		c.join(g)
 	}
 
 	// Add group to current mux/group
-	m.Add(path, g)
-	g.Compile()
+	m.add(path, g)
+	g.compile()
 	return g
 }
 
@@ -162,8 +162,8 @@ func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
 	//mux.chain = append(mux.chain, handler)
 	mux.chain.Use(handler)
 	for _, m := range mux.matchers {
-		m.Apply(func(c Compilable) {
-			c.Compile()
+		m.apply(func(c compilable) {
+			c.compile()
 		})
 	}
 
@@ -212,21 +212,21 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		insertParams(params, r.Form)
 	}
-	c.ServeHTTP(w, r)
+	c.serveHTTP(w, r)
 }
 
 // Find attempts to find the Compilable matching the passed in method+path
-func (mux *PathMuxer) find(method, path string) (Compilable, []Param, error) {
+func (mux *PathMuxer) find(method, path string) (compilable, []param, error) {
 	m, ok := mux.matchers[method]
 	if !ok {
 		return nil, nil, ErrNotImplemented
 	}
 
-	result, err := m.Match(path)
+	result, err := m.match(path)
 	if err != nil {
 		return nil, nil, err
 	}
-	return result.Data(), result.Params(), nil
+	return result.data(), result.params(), nil
 }
 
 // -----------------------------
@@ -261,12 +261,12 @@ func (handler RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 // Inserts parameters into a parameter map
-func insertParams(params []Param, values url.Values) {
+func insertParams(params []param, values url.Values) {
 	if len(params) == 0 {
 		return
 	}
 	for _, v := range params {
-		values.Add(v.Key, v.Value)
+		values.Add(v.key, v.value)
 	}
 }
 

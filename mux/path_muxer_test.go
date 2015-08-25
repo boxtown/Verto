@@ -151,27 +151,27 @@ func TestPathMuxerFind(t *testing.T) {
 
 	err := "Failed find."
 	pm := New()
-	m := &DefaultMatcher{}
+	m := &matcher{}
 	pm.matchers["GET"] = m
 	ep := &endpoint{}
-	var v []Param
+	var v []param
 
 	// Test basic find
-	m.Add("/path/to/handler", ep)
+	m.add("/path/to/handler", ep)
 	f, _, _ := pm.find("GET", "/path/to/handler")
 	if f != ep {
 		t.Errorf(err)
 	}
 
 	// Test wc find
-	m.Add("/path/{to}/handler", ep)
+	m.add("/path/{to}/handler", ep)
 	f, v, _ = pm.find("GET", "/path/wc/handler")
 	if f != ep {
 		t.Errorf(err)
 	}
 	found := false
 	for _, p := range v {
-		if p.Key == "to" && p.Value == "wc" {
+		if p.key == "to" && p.value == "wc" {
 			found = true
 			break
 		}
@@ -213,7 +213,7 @@ func TestPathMuxerAdd(t *testing.T) {
 		},
 	))
 	f, _, _ := pm.find("GET", "/path/to/handler")
-	f.ServeHTTP(nil, nil)
+	f.serveHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -225,7 +225,7 @@ func TestPathMuxerAdd(t *testing.T) {
 		},
 	))
 	f, _, _ = pm.find("GET", "/path/to/handler")
-	f.ServeHTTP(nil, nil)
+	f.serveHTTP(nil, nil)
 	if tVal != "B" {
 		t.Errorf(err)
 	}
@@ -248,7 +248,7 @@ func TestPathMuxerAddFunc(t *testing.T) {
 		tVal = "A"
 	})
 	f, _, _ := pm.find("GET", "/path/to/handler")
-	f.ServeHTTP(nil, nil)
+	f.serveHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -282,7 +282,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	})
 	g1 = pm.Group("GET", "/group1")
 	f, _, _ := pm.find("GET", "/path/to/handler")
-	f.ServeHTTP(nil, nil)
+	f.serveHTTP(nil, nil)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -297,7 +297,7 @@ func TestPathMuxerGroup(t *testing.T) {
 		t.Errorf(err)
 	}
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
-	f.ServeHTTP(nil, r)
+	f.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -312,7 +312,7 @@ func TestPathMuxerGroup(t *testing.T) {
 		// Notice trailing slash should be cut off
 		t.Errorf(err)
 	}
-	f.ServeHTTP(nil, r)
+	f.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -331,7 +331,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	} else if group.path != "/path" {
 		t.Errorf(err)
 	}
-	f.ServeHTTP(nil, r)
+	f.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}

@@ -31,11 +31,11 @@ func TestGroupAdd(t *testing.T) {
 	pm := New()
 	g1 := pm.Group("GET", "/path/to")
 	g1.Add("/handler", h1)
-	f, e := g1.(*group).matcher.Match("/handler")
+	f, e := g1.(*group).matcher.match("/handler")
 	if e != nil {
 		t.Errorf(err)
 	}
-	if ep, ok := f.Data().(*endpoint); !ok {
+	if ep, ok := f.data().(*endpoint); !ok {
 		t.Errorf(err)
 	} else if ep.path != "/handler" {
 		t.Errorf(err)
@@ -57,11 +57,11 @@ func TestGroupAdd(t *testing.T) {
 	tVal = ""
 	g1.Group("/another")
 	g1.Add("/another/handler", h1)
-	f, e = g1.(*group).matcher.Match("/another/handler")
+	f, e = g1.(*group).matcher.match("/another/handler")
 	if e != nil {
 		t.Errorf(err)
 	}
-	if g, ok := f.Data().(*group); !ok {
+	if g, ok := f.data().(*group); !ok {
 		t.Errorf(err)
 	} else if g.path != "/another" {
 		t.Errorf(err)
@@ -92,7 +92,7 @@ func TestGroupAddFunc(t *testing.T) {
 	})
 	f, _, _ := pm.find("GET", "/path/to/handler")
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
-	f.ServeHTTP(nil, r)
+	f.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -116,7 +116,7 @@ func TestGroupGroup(t *testing.T) {
 		tVal = "A"
 	})
 	r, _ := http.NewRequest("GET", "http://test.com/simple/handler", nil)
-	g1.ServeHTTP(nil, r)
+	g1.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -131,7 +131,7 @@ func TestGroupGroup(t *testing.T) {
 		tVal = "A"
 	})
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/handler", nil)
-	g1.ServeHTTP(nil, r)
+	g1.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -147,7 +147,7 @@ func TestGroupGroup(t *testing.T) {
 		tVal = "A"
 	})
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/simple2/handler", nil)
-	g1.ServeHTTP(nil, r)
+	g1.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -156,14 +156,14 @@ func TestGroupGroup(t *testing.T) {
 	tVal = ""
 	g2 = g1.Group("/simple2")
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/handler", nil)
-	g1.ServeHTTP(nil, r)
+	g1.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
 
 	tVal = ""
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/simple2/handler", nil)
-	g1.ServeHTTP(nil, r)
+	g1.serveHTTP(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
