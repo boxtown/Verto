@@ -24,7 +24,7 @@ import (
 type PathMuxer struct {
 	chain    *plugins
 	compiled *plugins
-	matchers map[string]*matcher
+	methods  map[string]*group
 
 	NotFound       http.Handler
 	NotImplemented http.Handler
@@ -39,8 +39,8 @@ type PathMuxer struct {
 // New returns a pointer to a newly initialized PathMuxer.
 func New() *PathMuxer {
 	muxer := PathMuxer{
-		chain:    newPlugins(),
-		matchers: make(map[string]*matcher),
+		chain:   newPlugins(),
+		methods: make(map[string]*group),
 
 		NotFound:       NotFoundHandler{},
 		NotImplemented: NotImplementedHandler{},
@@ -61,30 +61,12 @@ func (mux *PathMuxer) Add(method, path string, handler http.Handler) Endpoint {
 	}
 
 	// Grab matcher for method
-	m, ok := mux.matchers[method]
+	g, ok := mux.methods[method]
 	if !ok {
-		m = &matcher{}
-		mux.matchers[method] = m
+		g = newGroup(method, "", mux)
+		mux.methods[method] = g
 	}
-
-	// Attempt to find pre-existing endpoint for path.
-	// If it exists, set handler for endpoint. Otherwise
-	// create new endpoint and add it to the muxer.
-	var ep *endpoint
-	results, err := m.matchNoRegex(path)
-	if err != nil {
-		ep = newEndpoint(method, path, mux, handler)
-		ep.compile()
-		m.add(path, ep)
-	} else if results.data().cType() == GROUP {
-		g := results.data().(*group)
-		path = trimPathPrefix(path, g.path, false)
-		return g.Add(path, handler)
-	} else {
-		ep = results.data().(*endpoint)
-		ep.handler = handler
-	}
-	return ep
+	return g.Add(path, handler)
 }
 
 // AddFunc wraps f as an http.Handler and set is as handler for a specific method+path
@@ -113,58 +95,20 @@ func (mux *PathMuxer) Group(method, path string) Group {
 		path = path[:len(path)-1]
 	}
 
-	// Root passed in, return current mux
-	if len(path) == 0 || path == "/" {
-		panic("PathMuxer.Group: Cannot group at mux root.")
+	g, ok := mux.methods[method]
+	if !ok {
+		g = newGroup(method, "", mux)
+		mux.methods[method] = g
 	}
-
-	// Check for equivalent or super groups.
-	if c, _, _ := mux.find(method, path); c != nil {
-		if c.cType() == GROUP {
-			g := c.(*group)
-			if pathsEqual(g.path, path) {
-				return g
-			} else {
-				path = trimPathPrefix(path, g.path, false)
-				return g.Group(path)
-			}
-		}
-	}
-
-	// Create new group
-	g := newGroup(method, path, mux)
-
-	// Gather subgroups, drop them from current mux/group,
-	// add them to new group
-	sub := make([]compilable, 0)
-	m, ok := mux.matchers[method]
-	if ok {
-		m.applyAt(path, func(c compilable) {
-			sub = append(sub, c)
-		})
-	} else {
-		m = &matcher{}
-		mux.matchers[method] = m
-	}
-	for _, c := range sub {
-		c.join(g)
-	}
-
-	// Add group to current mux/group
-	m.add(path, g)
-	g.compile()
-	return g
+	return g.Group(path)
 }
 
 // Use adds a plugin handler onto the end of the chain of global
 // plugins for the muxer.
 func (mux *PathMuxer) Use(handler PluginHandler) *PathMuxer {
-	//mux.chain = append(mux.chain, handler)
 	mux.chain.use(handler)
-	for _, m := range mux.matchers {
-		m.apply(func(c compilable) {
-			c.compile()
-		})
+	for _, g := range mux.methods {
+		g.compile()
 	}
 
 	return mux
@@ -191,42 +135,12 @@ func (mux *PathMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, params, err := mux.find(r.Method, r.URL.Path)
-	if err == ErrNotFound {
-		mux.NotFound.ServeHTTP(w, r)
-		return
-	} else if err == ErrNotImplemented {
+	g, ok := mux.methods[r.Method]
+	if !ok {
 		mux.NotImplemented.ServeHTTP(w, r)
 		return
-	} else if err == ErrRedirectSlash {
-		if !mux.Strict {
-			r.URL.Path = handleTrailingSlash(r.URL.Path)
-			mux.Redirect.ServeHTTP(w, r)
-			return
-		}
-		mux.NotFound.ServeHTTP(w, r)
-		return
 	}
-
-	if len(params) > 0 {
-		r.ParseForm()
-		insertParams(params, r.Form)
-	}
-	c.serveHTTP(w, r)
-}
-
-// Find attempts to find the Compilable matching the passed in method+path
-func (mux *PathMuxer) find(method, path string) (compilable, []param, error) {
-	m, ok := mux.matchers[method]
-	if !ok {
-		return nil, nil, ErrNotImplemented
-	}
-
-	result, err := m.match(path)
-	if err != nil {
-		return nil, nil, err
-	}
-	return result.data(), result.params(), nil
+	g.exec(w, r)
 }
 
 // -----------------------------

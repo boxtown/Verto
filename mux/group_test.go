@@ -90,9 +90,9 @@ func TestGroupAddFunc(t *testing.T) {
 	g1.AddFunc("/handler", func(w http.ResponseWriter, r *http.Request) {
 		tVal = "A"
 	})
-	f, _, _ := pm.find("GET", "/path/to/handler")
+	f, _ := g1.(*group).matcher.match("/handler")
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
-	f.serveHTTP(nil, r)
+	f.data().exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -116,7 +116,7 @@ func TestGroupGroup(t *testing.T) {
 		tVal = "A"
 	})
 	r, _ := http.NewRequest("GET", "http://test.com/simple/handler", nil)
-	g1.serveHTTP(nil, r)
+	g1.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -131,7 +131,7 @@ func TestGroupGroup(t *testing.T) {
 		tVal = "A"
 	})
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/handler", nil)
-	g1.serveHTTP(nil, r)
+	g1.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -147,7 +147,7 @@ func TestGroupGroup(t *testing.T) {
 		tVal = "A"
 	})
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/simple2/handler", nil)
-	g1.serveHTTP(nil, r)
+	g1.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -156,14 +156,14 @@ func TestGroupGroup(t *testing.T) {
 	tVal = ""
 	g2 = g1.Group("/simple2")
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/handler", nil)
-	g1.serveHTTP(nil, r)
+	g1.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
 
 	tVal = ""
 	r, _ = http.NewRequest("GET", "http://test.com/simple2/wctest/simple2/simple2/handler", nil)
-	g1.serveHTTP(nil, r)
+	g1.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -176,6 +176,8 @@ func TestGroupPlugins(t *testing.T) {
 	tVal := ""
 	tVal2 := ""
 	tVal3 := ""
+
+	doPrint = true
 
 	// Test simple plugin chain
 	pm := New()

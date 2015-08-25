@@ -13,7 +13,7 @@ const (
 
 type compilable interface {
 	compile()
-	join(parent *group)
-	serveHTTP(w http.ResponseWriter, r *http.Request)
 	cType() cType
+	exec(w http.ResponseWriter, r *http.Request)
+	join(parent *group)
 }

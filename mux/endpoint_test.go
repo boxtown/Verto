@@ -25,11 +25,11 @@ func TestEndpointUse(t *testing.T) {
 		next(w, r)
 	})
 
-	ep := newEndpoint("GET", "", nil, handler)
+	ep := newEndpoint("GET", "", handler)
 	ep.Use(p)
 
 	r, _ := http.NewRequest("GET", "", nil)
-	ep.serveHTTP(nil, r)
+	ep.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -58,9 +58,9 @@ func TestEndpointServeHTTP(t *testing.T) {
 		next(w, r)
 	})
 
-	ep := newEndpoint("GET", "", nil, handler)
+	ep := newEndpoint("GET", "", handler)
 	r, _ := http.NewRequest("GET", "", nil)
-	ep.serveHTTP(nil, r)
+	ep.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -69,7 +69,7 @@ func TestEndpointServeHTTP(t *testing.T) {
 	ep.Use(p)
 	tVal = ""
 	r, _ = http.NewRequest("GET", "", nil)
-	ep.serveHTTP(nil, r)
+	ep.exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}

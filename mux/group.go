@@ -52,7 +52,7 @@ type group struct {
 // an empty initialized plugin chain
 // and an initialized matcher
 func newGroup(method, path string, mux *PathMuxer) *group {
-	return &group{
+	g := &group{
 		method:   method,
 		path:     path,
 		fullPath: path,
@@ -61,6 +61,8 @@ func newGroup(method, path string, mux *PathMuxer) *group {
 		chain:    newPlugins(),
 		compiled: newPlugins(),
 	}
+	g.compile()
+	return g
 }
 
 // Add adds a handler to the group at path. Wildcard characters
@@ -78,7 +80,7 @@ func (g *group) Add(path string, handler http.Handler) Endpoint {
 	var ep *endpoint
 	results, err := g.matcher.matchNoRegex(path)
 	if err != nil {
-		ep = newEndpoint(g.method, path, g.mux, handler)
+		ep = newEndpoint(g.method, path, handler)
 		ep.parent = g
 		ep.compile()
 		g.matcher.add(path, ep)
@@ -97,6 +99,8 @@ func (g *group) Add(path string, handler http.Handler) Endpoint {
 func (g *group) AddFunc(path string, f func(w http.ResponseWriter, r *http.Request)) Endpoint {
 	return g.Add(path, http.Handler(http.HandlerFunc(f)))
 }
+
+var doPrint = false
 
 // Group creates a subgroup of the group at the passed
 // in path. The subgroup's full path will be the path
@@ -201,25 +205,17 @@ func (g *group) compile() {
 	})
 }
 
-// Join sets a new group as parent and adjusts
-// the group's paths accordingly.
-func (g *group) join(parent *group) {
-	if g.parent != nil {
-		g.parent.matcher.drop(g.path)
-	} else if g.mux != nil {
-		g.mux.matchers[g.method].drop(g.path)
-	}
-	g.parent = parent
-	g.path = trimPathPrefix(g.path, parent.path, false)
-	g.fullPath = parent.fullPath + g.path
-	parent.matcher.add(g.path, g)
+// cType returns the type of Compilable
+// group is
+func (g *group) cType() cType {
+	return GROUP
 }
 
-// ServeHTTP attempts to find the correct endpoint for the request
+// exec attempts to find the correct endpoint for the request
 // deferring to subgroups if need be. If the correct endpoint is found,
 // the associated handler is run. Otherwise, the proper error response
 // is returned.
-func (g *group) serveHTTP(w http.ResponseWriter, r *http.Request) {
+func (g *group) exec(w http.ResponseWriter, r *http.Request) {
 	path := trimPathPrefix(r.URL.Path, g.fullPath, true)
 	if path[0] != '/' {
 		path = "/" + path
@@ -243,11 +239,17 @@ func (g *group) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		insertParams(result.params(), r.Form)
 	}
-	result.data().serveHTTP(w, r)
+	result.data().exec(w, r)
 }
 
-// Type returns the type of Compilable
-// group is
-func (g *group) cType() cType {
-	return GROUP
+// Join sets a new group as parent and adjusts
+// the group's paths accordingly.
+func (g *group) join(parent *group) {
+	if g.parent != nil {
+		g.parent.matcher.drop(g.path)
+	}
+	g.parent = parent
+	g.path = trimPathPrefix(g.path, parent.path, false)
+	g.fullPath = parent.fullPath + g.path
+	parent.matcher.add(g.path, g)
 }

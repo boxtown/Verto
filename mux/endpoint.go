@@ -27,7 +27,6 @@ type endpoint struct {
 	path   string
 
 	parent  *group
-	mux     *PathMuxer
 	handler http.Handler
 
 	chain    *plugins
@@ -36,11 +35,10 @@ type endpoint struct {
 
 // returns a fully initialized endpoint with handler
 // as the http handler
-func newEndpoint(method, path string, mux *PathMuxer, handler http.Handler) *endpoint {
+func newEndpoint(method, path string, handler http.Handler) *endpoint {
 	ep := &endpoint{
 		method:  method,
 		path:    path,
-		mux:     mux,
 		handler: handler,
 		chain:   newPlugins(),
 	}
@@ -55,9 +53,6 @@ func (ep *endpoint) compile() {
 	if ep.parent != nil {
 		// parent exists so request copy from parent
 		ep.compiled.link(ep.parent.compiled.deepCopy())
-	} else if ep.mux != nil {
-		// no parent so request copy from muxer
-		ep.compiled.link(ep.mux.chain.deepCopy())
 	}
 	ep.compiled.link(ep.chain.deepCopy())
 	ep.compiled.use(PluginFunc(
@@ -67,27 +62,25 @@ func (ep *endpoint) compile() {
 	))
 }
 
+// cType returns the type of Compilable this is
+func (ep *endpoint) cType() cType {
+	return ENDPOINT
+}
+
+// exec runs the compiled chain of handlers for this endpoint.
+func (ep *endpoint) exec(w http.ResponseWriter, r *http.Request) {
+	ep.compiled.run(w, r)
+}
+
 // Join sets a new group as parent and adjusts
 // the endpoint's paths accordingly.
 func (ep *endpoint) join(parent *group) {
 	if ep.parent != nil {
 		ep.parent.matcher.drop(ep.path)
-	} else if ep.mux != nil {
-		ep.mux.matchers[ep.method].drop(ep.path)
 	}
 	ep.parent = parent
 	ep.path = trimPathPrefix(ep.path, parent.path, false)
 	parent.matcher.add(ep.path, ep)
-}
-
-// ServeHTTP runs the compiled chain of handlers for this endpoint.
-func (ep *endpoint) serveHTTP(w http.ResponseWriter, r *http.Request) {
-	ep.compiled.run(w, r)
-}
-
-// Type returns the type of Compilable this is
-func (ep *endpoint) cType() cType {
-	return ENDPOINT
 }
 
 // Use adds a PluginHandler onto the end of the chain of plugins

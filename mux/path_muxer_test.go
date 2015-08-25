@@ -141,58 +141,6 @@ func TestPathsEqual(t *testing.T) {
 
 }
 
-func TestPathMuxerFind(t *testing.T) {
-	defer func() {
-		err := recover()
-		if err != nil {
-			t.Errorf(err.(error).Error())
-		}
-	}()
-
-	err := "Failed find."
-	pm := New()
-	m := &matcher{}
-	pm.matchers["GET"] = m
-	ep := &endpoint{}
-	var v []param
-
-	// Test basic find
-	m.add("/path/to/handler", ep)
-	f, _, _ := pm.find("GET", "/path/to/handler")
-	if f != ep {
-		t.Errorf(err)
-	}
-
-	// Test wc find
-	m.add("/path/{to}/handler", ep)
-	f, v, _ = pm.find("GET", "/path/wc/handler")
-	if f != ep {
-		t.Errorf(err)
-	}
-	found := false
-	for _, p := range v {
-		if p.key == "to" && p.value == "wc" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf(err)
-	}
-
-	// Test not found
-	_, _, e := pm.find("GET", "/path/to/nf")
-	if e != ErrNotFound {
-		t.Errorf(e.Error())
-	}
-
-	// Test redirect
-	_, _, e = pm.find("GET", "/path/to/handler/")
-	if e != ErrRedirectSlash {
-		t.Errorf(e.Error())
-	}
-}
-
 func TestPathMuxerAdd(t *testing.T) {
 	defer func() {
 		err := recover()
@@ -212,8 +160,8 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "A"
 		},
 	))
-	f, _, _ := pm.find("GET", "/path/to/handler")
-	f.serveHTTP(nil, nil)
+	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -224,8 +172,7 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "B"
 		},
 	))
-	f, _, _ = pm.find("GET", "/path/to/handler")
-	f.serveHTTP(nil, nil)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "B" {
 		t.Errorf(err)
 	}
@@ -247,8 +194,8 @@ func TestPathMuxerAddFunc(t *testing.T) {
 	pm.AddFunc("GET", "/path/to/handler", func(w http.ResponseWriter, r *http.Request) {
 		tVal = "A"
 	})
-	f, _, _ := pm.find("GET", "/path/to/handler")
-	f.serveHTTP(nil, nil)
+	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -281,8 +228,8 @@ func TestPathMuxerGroup(t *testing.T) {
 		tVal = "A"
 	})
 	g1 = pm.Group("GET", "/group1")
-	f, _, _ := pm.find("GET", "/path/to/handler")
-	f.serveHTTP(nil, nil)
+	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -290,14 +237,8 @@ func TestPathMuxerGroup(t *testing.T) {
 	// Test subsume endpoint
 	tVal = ""
 	g2 = pm.Group("GET", "/path/to")
-	f, _, _ = pm.find("GET", "/path/to/handler")
-	if group, ok := f.(*group); !ok {
-		t.Errorf(err)
-	} else if group.path != "/path/to" {
-		t.Errorf(err)
-	}
-	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
-	f.serveHTTP(nil, r)
+	r, _ = http.NewRequest("GET", "http://test.com/path/to/handler", nil)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -305,14 +246,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	// Test subsume group
 	tVal = ""
 	pm.Group("GET", "/path/")
-	f, _, _ = pm.find("GET", "/path/to/handler")
-	if group, ok := f.(*group); !ok {
-		t.Errorf(err)
-	} else if group.path != "/path" {
-		// Notice trailing slash should be cut off
-		t.Errorf(err)
-	}
-	f.serveHTTP(nil, r)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
@@ -325,13 +259,7 @@ func TestPathMuxerGroup(t *testing.T) {
 	})
 	g1 = pm.Group("GET", "/path")
 	pm.Group("GET", "/to")
-	f, _, _ = pm.find("GET", "/path/to/handler")
-	if group, ok := f.(*group); !ok {
-		t.Errorf(err)
-	} else if group.path != "/path" {
-		t.Errorf(err)
-	}
-	f.serveHTTP(nil, r)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
