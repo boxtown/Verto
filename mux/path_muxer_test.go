@@ -165,16 +165,38 @@ func TestPathMuxerAdd(t *testing.T) {
 			tVal = "B"
 		},
 	))
-
 	r, _ := http.NewRequest("GET", "http://test.com/path/to/handler", nil)
 	pm.methods["GET"].exec(nil, r)
 	if tVal != "A" {
 		t.Errorf(err)
 	}
-
 	tVal = ""
 	r, _ = http.NewRequest("GET", "http://test.com/path/another/handler", nil)
 	pm.methods["POST"].exec(nil, r)
+	if tVal != "B" {
+		t.Errorf(err)
+	}
+
+	// Test add with wildcard
+	pm.Add("GET", "/path2/{wc}", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			tVal = "A"
+		},
+	))
+	pm.Add("GET", "/path2/nonwc", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			tVal = "B"
+		},
+	))
+	tVal = ""
+	r, _ = http.NewRequest("GET", "http://test.com/path2/wc", nil)
+	pm.methods["GET"].exec(nil, r)
+	if tVal != "A" {
+		t.Errorf(err)
+	}
+	tVal = ""
+	r, _ = http.NewRequest("GET", "http://test.com/path2/nonwc", nil)
+	pm.methods["GET"].exec(nil, r)
 	if tVal != "B" {
 		t.Errorf(err)
 	}

@@ -310,25 +310,13 @@ func (n *matcherNode) match(path string, explicit bool, maxParams int) (results,
 				return nil, ErrNotFound
 			}
 
-			// Explicit match so don't check for wildcards if
-			// segment isn't a wildcard segment
-			if explicit && (len(s) == 0 || s[0] != '{' || s[len(s)-1] != '}') {
-				if n.catchAll != nil {
-					n = n.catchAll
-					break
-				}
-				if mrg != nil {
-					results.c = mrg
-					return results, nil
-				}
-				return nil, ErrNotFound
-			}
+			var notWild = len(s) == 0 || s[0] != '{' || s[len(s)-1] != '}'
+			child = n.wildChild
 
-			// Not at trailing slash so we check for a possible
-			// wildcard segment
-			if child = n.wildChild; child == nil {
-				// No wildcard so we check for either
-				// last resort catch-all or most recent group
+			// If segment is not wild and we want explicit match
+			// or wild child doesn't exist, check catch all and
+			// most recent group as last ditch effort
+			if (explicit && notWild) || child == nil {
 				if n.catchAll != nil {
 					n = n.catchAll
 					break

@@ -113,16 +113,35 @@ type Group struct {
 	v *Verto
 }
 
-// Add is a wrapper around mux.Group.Add that returns an Endpoint
-// instead of a mux.Endpoint
-func (g *Group) Add(path string, handler http.Handler) *Endpoint {
-	return &Endpoint{g.g.Add(path, handler), g.v}
+// Add is a wrapper around mux.Group.Add wraps rf as an http.Handler and
+// returns an Endpoint instead of a mux.Endpoint
+func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
+	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
+		c := &Context{
+			Response:   w,
+			Request:    r,
+			Injections: v.Injections,
+			Logger:     v.Logger,
+		}
+
+		response, err := rf(c)
+		if err != nil {
+			if v.doLogging {
+				v.Logger.Error(err.Error())
+			}
+			v.ErrorHandler.Handle(err, c)
+		} else {
+			v.ResponseHandler.Handle(response, c)
+		}
+	}
+
+	return &Endpoint{g.g.AddFunc(method, path, handlerFunc), g.v}
 }
 
-// AddFunc is a wrapper around mux.Group.AddFunc that returns an
+// AddHandler is a wrapper around mux.Group.Add that returns an
 // Endpoint instead of a mux.Endpoint
-func (g *Group) AddFunc(path string, f func(w http.ResponseWriter, r *http.Request)) *Endpoint {
-	return &Endpoint{g.g.AddFunc(path, f), g.v}
+func (g *Group) AddHandler(path string, handler http.Handler) *Endpoint {
+	return &Endpoint{g.g.Add(path, handler), g.v}
 }
 
 // Group is a wrapper around mux.Group.Group that returns
