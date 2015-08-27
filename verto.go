@@ -197,12 +197,15 @@ type Verto struct {
 	muxer     *mux.PathMuxer
 }
 
-type VertoTester struct {
-	V *Verto
+// VertoHTTPHandler is a wrapper around Verto such that it can run
+// as an http.handler
+type VertoHTTPHandler struct {
+	*Verto
 }
 
-func (vt *VertoTester) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	vt.V.muxer.ServeHTTP(w, r)
+// ServeHTTP serves request directly to Verto's muxer.
+func (vhh *VertoHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	vhh.muxer.ServeHTTP(w, r)
 }
 
 // New returns a pointer to a newly initialized Verto instance.
