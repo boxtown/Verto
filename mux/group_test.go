@@ -177,8 +177,6 @@ func TestGroupPlugins(t *testing.T) {
 	tVal2 := ""
 	tVal3 := ""
 
-	doPrint = true
-
 	// Test simple plugin chain
 	pm := New()
 	pm.Use(PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
