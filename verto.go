@@ -120,22 +120,22 @@ func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
 		c := &Context{
 			Response:   w,
 			Request:    r,
-			Injections: v.Injections,
-			Logger:     v.Logger,
+			Injections: g.v.Injections,
+			Logger:     g.v.Logger,
 		}
 
 		response, err := rf(c)
 		if err != nil {
-			if v.doLogging {
-				v.Logger.Error(err.Error())
+			if g.v.doLogging {
+				g.v.Logger.Error(err.Error())
 			}
-			v.ErrorHandler.Handle(err, c)
+			g.v.ErrorHandler.Handle(err, c)
 		} else {
-			v.ResponseHandler.Handle(response, c)
+			g.v.ResponseHandler.Handle(response, c)
 		}
 	}
 
-	return &Endpoint{g.g.AddFunc(method, path, handlerFunc), g.v}
+	return &Endpoint{g.g.AddFunc(path, handlerFunc), g.v}
 }
 
 // AddHandler is a wrapper around mux.Group.Add that returns an

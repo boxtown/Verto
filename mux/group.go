@@ -100,8 +100,6 @@ func (g *group) AddFunc(path string, f func(w http.ResponseWriter, r *http.Reque
 	return g.Add(path, http.Handler(http.HandlerFunc(f)))
 }
 
-var doPrint = false
-
 // Group creates a subgroup of the group at the passed
 // in path. The subgroup's full path will be the path
 // of the parent group plus the passed in path. Groups
