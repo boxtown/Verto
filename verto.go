@@ -197,6 +197,14 @@ type Verto struct {
 	muxer     *mux.PathMuxer
 }
 
+type VertoTester struct {
+	V *Verto
+}
+
+func (vt *VertoTester) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	vt.V.muxer.ServeHTTP(w, r)
+}
+
 // New returns a pointer to a newly initialized Verto instance.
 // The path /shutdown is automatically reserved as a way to cleanly
 // shutdown the instance but is only available to calls from localhost.
@@ -396,13 +404,6 @@ func (v *Verto) Run() {
 // function for Verto. DefaultErrorFunc sends a 500 response
 // and the error message as the response body.
 func DefaultErrorFunc(err error, c *Context) {
-	if c == nil {
-		return
-	}
-	if c.Response == nil {
-		return
-	}
-
 	c.Response.WriteHeader(500)
 	fmt.Fprint(c.Response, err.Error())
 }
@@ -411,13 +412,6 @@ func DefaultErrorFunc(err error, c *Context) {
 // function for Verto. DefaultResponseFunc sends a 200 response with
 // response as the response body.
 func DefaultResponseFunc(response interface{}, c *Context) {
-	if c == nil {
-		return
-	}
-	if c.Response == nil {
-		return
-	}
-
 	c.Response.WriteHeader(200)
 	fmt.Fprint(c.Response, response)
 }

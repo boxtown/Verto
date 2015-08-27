@@ -41,47 +41,16 @@ func TestLoggerPrinting(t *testing.T) {
 		l.files = append(l.files, w)
 	}
 
-	e := l.Info(msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Debug(msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Warn(msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Error(msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Print(msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-
-	e = l.Infof("%s", msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Debugf("%s", msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Warnf("%s", msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Errorf("%s", msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
-	e = l.Printf("%s", msg)
-	if e != nil {
-		t.Errorf(e.Error())
-	}
+	l.Info(msg)
+	l.Debug(msg)
+	l.Warn(msg)
+	l.Error(msg)
+	l.Print(msg)
+	l.Infof("%s", msg)
+	l.Debugf("%s", msg)
+	l.Warnf("%s", msg)
+	l.Errorf("%s", msg)
+	l.Printf("%s", msg)
 }
 
 func TestLoggerAddSubscriber(t *testing.T) {

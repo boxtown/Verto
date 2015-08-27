@@ -10,18 +10,22 @@ import (
 
 // Logger is the interface for Verto Logging.
 type Logger interface {
-	Info(v ...interface{}) error
-	Debug(v ...interface{}) error
-	Warn(v ...interface{}) error
-	Error(v ...interface{}) error
+	Info(v ...interface{})
+	Debug(v ...interface{})
+	Warn(v ...interface{})
+	Error(v ...interface{})
+	Fatal(v ...interface{})
+	Panic(v ...interface{})
 
-	Infof(format string, v ...interface{}) error
-	Debugf(format string, v ...interface{}) error
-	Warnf(format string, v ...interface{}) error
-	Errorf(format string, v ...interface{}) error
+	Infof(format string, v ...interface{})
+	Debugf(format string, v ...interface{})
+	Warnf(format string, v ...interface{})
+	Errorf(format string, v ...interface{})
+	Fatalf(format string, v ...interface{})
+	Panicf(format string, v ...interface{})
 
-	Print(v ...interface{}) error
-	Printf(format string, v ...interface{}) error
+	Print(v ...interface{})
+	Printf(format string, v ...interface{})
 
 	Close() error
 }
@@ -30,6 +34,7 @@ type Logger interface {
 type DefaultLogger struct {
 	subscribers map[string]chan string
 	dropped     map[string][]string
+	errors      []string
 	files       []*os.File
 }
 
@@ -38,6 +43,7 @@ func NewLogger() *DefaultLogger {
 	return &DefaultLogger{
 		subscribers: make(map[string]chan string),
 		dropped:     make(map[string][]string),
+		errors:      make([]string, 0),
 		files:       make([]*os.File, 0),
 	}
 }
@@ -87,6 +93,12 @@ func (dl *DefaultLogger) Dropped(key string) []string {
 	return dl.dropped[key]
 }
 
+// Errors returns a slice of all errors that occured
+// while writing to files
+func (dl *DefaultLogger) Errors() []string {
+	return dl.errors
+}
+
 // Close attempts to close all opened files attached to VertoLogger.
 // Errors are recorded and combined into one single error so that an
 // error doesn't prevent the closing of other files.
@@ -108,76 +120,108 @@ func (dl *DefaultLogger) Close() error {
 }
 
 // Info prints an info level message to all subscribers and open
-// log files. Info returns an error if there was an error printing.
-func (dl *DefaultLogger) Info(v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Info(v ...interface{}) {
 	prefix := "[INFO]"
-	return dl.lprint(prefix, v...)
+	dl.lprint(prefix, v...)
 }
 
 // Debug prints a debug level message to all subscribers and open
-// log files. Debug returns an error if there was an error printing.
-func (dl *DefaultLogger) Debug(v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Debug(v ...interface{}) {
 	prefix := "[DEBUG]"
-	return dl.lprint(prefix, v...)
+	dl.lprint(prefix, v...)
 }
 
 // Warn prints a warn level message to all subscribers and open
-// log files. Warn returns an error if there was an error printing.
-func (rl *DefaultLogger) Warn(v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Warn(v ...interface{}) {
 	prefix := "[WARN]"
-	return rl.lprint(prefix, v...)
+	dl.lprint(prefix, v...)
 }
 
 // Error prints an error level message to all subscribers and open
-// log files. Error returns an error if there was an error printing.
-func (dl *DefaultLogger) Error(v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Error(v ...interface{}) {
 	prefix := "[ERROR]"
-	return dl.lprint(prefix, v...)
+	dl.lprint(prefix, v...)
+}
+
+// Fatal prints a fatal level message to all subscribers and open log files
+// and then calls os.Exit
+func (dl *DefaultLogger) Fatal(v ...interface{}) {
+	prefix := "[FATAL]"
+	dl.lprint(prefix, v...)
+	os.Exit(1)
+}
+
+// Panic prints a panic level message to all subscribers and open log files
+// and then panics
+func (dl *DefaultLogger) Panic(v ...interface{}) {
+	prefix := "[PANIC]"
+	dl.lprint(prefix, v...)
+	panic(fmt.Sprint(v...))
 }
 
 // Infof prints a formatted info level message to all subscribers and open
-// log files. Info returns an error if there was an error printing.
-func (dl *DefaultLogger) Infof(format string, v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Infof(format string, v ...interface{}) {
 	prefix := "[INFO]"
-	return dl.lprintf(prefix, format, v...)
+	dl.lprintf(prefix, format, v...)
 }
 
 // Debugf prints a formatted debug level message to all subscribers and open
-// log files. Debug returns an error if there was an error printing.
-func (dl *DefaultLogger) Debugf(format string, v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Debugf(format string, v ...interface{}) {
 	prefix := "[DEBUG]"
-	return dl.lprintf(prefix, format, v...)
+	dl.lprintf(prefix, format, v...)
 }
 
 // Warnf prints a formatted warn level message to all subscribers and open
-// log files. Warn returns an error if there was an error printing.
-func (dl *DefaultLogger) Warnf(format string, v ...interface{}) error {
+// log files.
+func (dl *DefaultLogger) Warnf(format string, v ...interface{}) {
 	prefix := "[WARN]"
-	return dl.lprintf(prefix, format, v...)
+	dl.lprintf(prefix, format, v...)
 }
 
-// Errorf prints a formmated error level message to all subscribers and open
-// log files. Error returns an error if there was an error printing.
-func (dl *DefaultLogger) Errorf(format string, v ...interface{}) error {
+// Errorf prints a formatted error level message to all subscribers and open
+// log files.
+func (dl *DefaultLogger) Errorf(format string, v ...interface{}) {
 	prefix := "[ERROR]"
-	return dl.lprintf(prefix, format, v...)
+	dl.lprintf(prefix, format, v...)
+}
+
+// Fatalf prints a formatted fatal level message to all subscribers and open log files
+// and then calls os.Exit
+func (dl *DefaultLogger) Fatalf(format string, v ...interface{}) {
+	prefix := "[FATAL]"
+	dl.lprintf(prefix, format, v...)
+	os.Exit(1)
+}
+
+// Panicf prints a formatted panic level message to all subscribers and open log files
+// and then panics
+func (dl *DefaultLogger) Panicf(format string, v ...interface{}) {
+	prefix := "[PANIC]"
+	dl.lprintf(prefix, format, v...)
+	panic(fmt.Sprintf(format, v...))
 }
 
 // Print prints a message to all subscribers and open
-// log files. Print returns an error if there was an error printing.
-func (dl *DefaultLogger) Print(v ...interface{}) error {
-	return dl.lprint("", v...)
+// log files.
+func (dl *DefaultLogger) Print(v ...interface{}) {
+	dl.lprint("", v...)
 }
 
 // Printf prints a formatted message to all subscribers and open
-// log files. Printf returns an error if there was an error printing.
-func (dl *DefaultLogger) Printf(format string, v ...interface{}) error {
-	return dl.lprintf("", format, v...)
+// log files.
+func (dl *DefaultLogger) Printf(format string, v ...interface{}) {
+	dl.lprintf("", format, v...)
 }
 
-// Prints a message to all subscribers and open log files.
-// Returns an error if there was an error printing.
-func (dl *DefaultLogger) lprint(prefix string, v ...interface{}) error {
+// Prints a message to all subscribers and open log files. Keeps
+// track of errors writing to files
+func (dl *DefaultLogger) lprint(prefix string, v ...interface{}) {
 	var buf bytes.Buffer
 	dl.appendPrefix(prefix, &buf)
 
@@ -187,11 +231,11 @@ func (dl *DefaultLogger) lprint(prefix string, v ...interface{}) error {
 	msg := buf.String()
 
 	dl.pushToSubs(msg)
-	return dl.writeToFiles(msg)
+	dl.writeToFiles(msg)
 }
 
-// Prints a formatted message.
-func (dl *DefaultLogger) lprintf(prefix, format string, v ...interface{}) error {
+// Prints a formatted message. Keeps track of errors writing to files
+func (dl *DefaultLogger) lprintf(prefix, format string, v ...interface{}) {
 	var buf bytes.Buffer
 	dl.appendPrefix(prefix, &buf)
 
@@ -205,7 +249,7 @@ func (dl *DefaultLogger) lprintf(prefix, format string, v ...interface{}) error 
 	msg := buf.String()
 
 	dl.pushToSubs(msg)
-	return dl.writeToFiles(msg)
+	dl.writeToFiles(msg)
 }
 
 // Appends a prefix consisting of the current time and the passed in prefix
@@ -242,7 +286,7 @@ func (dl *DefaultLogger) writeToFiles(msg string) error {
 	}
 
 	if errBuf.Len() > 0 {
-		return errors.New(errBuf.String())
+		dl.errors = append(dl.errors, errBuf.String())
 	}
 
 	return nil

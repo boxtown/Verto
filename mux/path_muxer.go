@@ -385,7 +385,7 @@ func trimPathPrefix(path, prefix string, skipWild bool) string {
 
 	var buf bytes.Buffer
 	for ; j < len(path); j++ {
-		buf.WriteRune(rune(path[j]))
+		buf.WriteByte(byte(path[j]))
 	}
 	return buf.String()
 }
