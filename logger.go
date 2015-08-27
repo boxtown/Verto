@@ -23,12 +23,6 @@ type Logger interface {
 	Print(v ...interface{}) error
 	Printf(format string, v ...interface{}) error
 
-	AddSubscriber(key string) <-chan string
-	AddFile(f *os.File) error
-	AddFilePath(path string) error
-
-	Dropped(key string) []string
-
 	Close() error
 }
 
