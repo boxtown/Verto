@@ -72,7 +72,7 @@ normal `http.Handler`.
   
 Verto also includes the option for named parameters in the path. Named parameters can 
 be more strictly defined using regular expressions. Named parameters will be injected into  
-`r.URL.Query()` and, if the endpoint is a `ResourceFunc`, will be retrievable through the  
+`r.FormValue()` and, if the endpoint is a `ResourceFunc`, will be retrievable through the  
 [Context](#context) utility functions.  
   
   ```Go
@@ -156,7 +156,7 @@ Verto provides the ability to create route groups.
 
   ```Go
   // Create a group
-  g := v.Group("/path/path2/path3")
+  g := v.Group("GET", "/path/path2/path3")
   
   // Add endpoint handlers to a route group. The full path
   // for the handler will be /path/path2/path3/handler. 
@@ -352,38 +352,26 @@ custom loggers that implement the following interface:
   type Logger interface {
     // The following functions print messages
     // at various levels to any open log files and subscribers
-    Info(v ...interface{}) error
-    Debug(v ...interface{}) error
-    Warn(v ...interface{}) error
-    Error(v ...interface{}) error
+    Info(v ...interface{})
+    Debug(v ...interface{})
+    Warn(v ...interface{})
+    Error(v ...interface{})
+    Fatal(v ...interface{})
+    Panic(v ...interface{})
     
     // The following functions print formatted messages
     // at various levels to any open log files and subscribers
-    Infof(format string, v ...interface{}) error
-    Debugf(format string, v ...interface{}) error
-    Warnf(format string, v ...interface{}) error
-    Errorf(format string, v ...interface{}) error
+    Infof(format string, v ...interface{})
+    Debugf(format string, v ...interface{})
+    Warnf(format string, v ...interface{}) 
+    Errorf(format string, v ...interface{})
+    Fatalf(format string, v ...interface{})
+    Panicf(format string, v ...interface{})
     
     // Print a message to open log files and subscribers
-    Print(v ...interface{}) error
+    Print(v ...interface{})
     // Print a formatted message to open log files and subscribers
-    Printf(format string, v ...interface{}) error
-    
-    // Add a subscriber channel that gets log messages pushed to it.
-    // The channel should be read from regularly to prevent dropped messages.
-    // The default logger drops messages if they've been blocking for 0.5s
-    AddSubscriber(key string) <-chan string
-    
-    // Add an open log file to write messages to. An error
-    // is thrown for invalid files.
-    AddFile(f *os.File) error
-    
-    // Open a file at path to write messages to. If the file could
-    // not be opened/created for appending, an error will be thrown.
-    AddFilePath(path string) error
-    
-    // Retrieve any dropped messages for a subscriber channel.
-    Dropped(key string) []string
+    Printf(format string, v ...interface{})
     
     // Close any open log files and subscriber channels. Returns
     // an error if there was any issue closing any files or channels.
