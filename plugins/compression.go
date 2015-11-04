@@ -1,8 +1,6 @@
 package plugins
 
 import (
-	"compress/flate"
-	"compress/gzip"
 	"github.com/boxtown/verto"
 	"io"
 	"net/http"
@@ -47,11 +45,11 @@ func compressionFunc(c *verto.Context, next http.HandlerFunc) {
 		if v == "gzip" {
 			w.Header().Add("Content-Encoding", "gzip")
 
-			gw := gzip.NewWriter(w)
-			defer gw.Close()
+			ref := pool.get(w, ctGzip)
+			defer ref.dispose()
 
 			w = &compressionWriter{
-				Writer:         gw,
+				Writer:         ref.w,
 				ResponseWriter: w,
 			}
 			next(w, r)
@@ -60,11 +58,11 @@ func compressionFunc(c *verto.Context, next http.HandlerFunc) {
 		if v == "deflate" {
 			w.Header().Add("Content-Encoding", "deflate")
 
-			fw, _ := flate.NewWriter(w, flate.DefaultCompression)
-			defer fw.Close()
+			ref := pool.get(w, ctFlate)
+			defer ref.dispose()
 
 			w = &compressionWriter{
-				Writer:         fw,
+				Writer:         ref.w,
 				ResponseWriter: w,
 			}
 			next(w, r)
