@@ -49,12 +49,17 @@ func NewContext(w http.ResponseWriter, r *http.Request, i *Injections, l Logger)
 }
 
 // Get retrieves the request parameter associated with
-// key or an error if there was an error retrieving parameters
-// from the Request
+// key. If there was an error retrieving the parameter,
+// the error is stored and retrievable by the ParseError
+// call.
 func (c *Context) Get(key string) string {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
+	if c.Request == nil {
+		c.parseErr = ErrContextNotInitialized
+		return ""
+	}
 	if c.params == nil {
 		if err := c.Request.ParseForm(); err != nil {
 			c.parseErr = err
@@ -65,12 +70,16 @@ func (c *Context) Get(key string) string {
 }
 
 // GetMulti returns the a slice containing all relevant parameters
-// tied to key or an error if there was an error retrieving parameters
-// from the Request
+// tied to key. If there was an error retrieving the parameters,
+// the error is stored and retrievable by the ParseError call
 func (c *Context) GetMulti(key string) []string {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
+	if c.Request == nil {
+		c.parseErr = ErrContextNotInitialized
+		return nil
+	}
 	if c.params == nil {
 		if err := c.Request.ParseForm(); err != nil {
 			c.parseErr = err
@@ -106,6 +115,10 @@ func (c *Context) Set(key, value string) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
+	if c.Request == nil {
+		c.parseErr = ErrContextNotInitialized
+		return
+	}
 	if c.params == nil {
 		if err := c.Request.ParseForm(); err != nil {
 			c.parseErr = err
@@ -120,6 +133,10 @@ func (c *Context) SetMulti(key string, values []string) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
+	if c.Request == nil {
+		c.parseErr = ErrContextNotInitialized
+		return
+	}
 	if c.params == nil {
 		if err := c.Request.ParseForm(); err != nil {
 			c.parseErr = err
