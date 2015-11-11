@@ -95,13 +95,7 @@ func (ep *Endpoint) UseHandler(handler http.Handler) *Endpoint {
 // into the context. Returns the Endpoint for chaining.
 func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := &Context{
-			Response:   w,
-			Request:    r,
-			Injections: ep.v.Injections,
-			Logger:     ep.v.Logger,
-		}
-
+		c := NewContext(w, r, ep.v.Injections, ep.v.Logger)
 		plugin.Handle(c, next)
 	}
 	return &Endpoint{ep.Endpoint.Use(mux.PluginFunc(pluginFunc)), ep.v}
@@ -117,24 +111,14 @@ type Group struct {
 // returns an Endpoint instead of a mux.Endpoint
 func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
-		c := &Context{
-			Response:   w,
-			Request:    r,
-			Injections: g.v.Injections,
-			Logger:     g.v.Logger,
-		}
-
+		c := NewContext(w, r, g.v.Injections, g.v.Logger)
 		response, err := rf(c)
 		if err != nil {
-			if g.v.doLogging {
-				g.v.Logger.Error(err.Error())
-			}
 			g.v.ErrorHandler.Handle(err, c)
 		} else {
 			g.v.ResponseHandler.Handle(response, c)
 		}
 	}
-
 	return &Endpoint{g.g.AddFunc(path, handlerFunc), g.v}
 }
 
@@ -167,13 +151,7 @@ func (g *Group) UseHandler(handler http.Handler) *Group {
 // Use calls.
 func (g *Group) UseVerto(plugin Plugin) *Group {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := &Context{
-			Response:   w,
-			Request:    r,
-			Injections: g.v.Injections,
-			Logger:     g.v.Logger,
-		}
-
+		c := NewContext(w, r, g.v.Injections, g.v.Logger)
 		plugin.Handle(c, next)
 	}
 	return &Group{g.g.Use(mux.PluginFunc(pluginFunc)), g.v}
@@ -192,9 +170,9 @@ type Verto struct {
 	ErrorHandler    ErrorHandler
 	ResponseHandler ResponseHandler
 
-	doLogging bool
-	sl        *StoppableListener
-	muxer     *mux.PathMuxer
+	verbose bool
+	sl      *StoppableListener
+	muxer   *mux.PathMuxer
 }
 
 // VertoHTTPHandler is a wrapper around Verto such that it can run
@@ -213,11 +191,9 @@ func (vhh *VertoHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // shutdown the instance but is only available to calls from localhost.
 func New() *Verto {
 	v := Verto{
-		Logger:    NewLogger(),
-		doLogging: false,
-
-		muxer: mux.New(),
-
+		Logger:     NewLogger(),
+		verbose:    false,
+		muxer:      mux.New(),
 		Injections: NewInjections(),
 	}
 
@@ -236,7 +212,6 @@ func New() *Verto {
 
 	v.ErrorHandler = ErrorFunc(DefaultErrorFunc)
 	v.ResponseHandler = ResponseFunc(DefaultResponseFunc)
-
 	return &v
 }
 
@@ -248,18 +223,9 @@ func (v *Verto) Add(
 	rf ResourceFunc) *Endpoint {
 
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
-		c := &Context{
-			Response:   w,
-			Request:    r,
-			Injections: v.Injections,
-			Logger:     v.Logger,
-		}
-
+		c := NewContext(w, r, v.Injections, v.Logger)
 		response, err := rf(c)
 		if err != nil {
-			if v.doLogging {
-				v.Logger.Error(err.Error())
-			}
 			v.ErrorHandler.Handle(err, c)
 		} else {
 			v.ResponseHandler.Handle(response, c)
@@ -330,9 +296,9 @@ func (v *Verto) DeleteHandler(path string, handler http.Handler) *Endpoint {
 	return v.AddHandler("DELETE", path, handler)
 }
 
-// SetLogging sets whether Verto logs or not.
-func (v *Verto) SetLogging(log bool) {
-	v.doLogging = log
+// SetVerbose sets whether the Verto instance is verbose or not
+func (v *Verto) SetVerbose(verbose bool) {
+	v.verbose = verbose
 }
 
 // SetStrict sets whether to do strict path matching or not.
@@ -356,17 +322,10 @@ func (v *Verto) UseHandler(handler http.Handler) *Verto {
 // UseVerto wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
 func (v *Verto) UseVerto(plugin Plugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := &Context{
-			Response:   w,
-			Request:    r,
-			Injections: v.Injections,
-			Logger:     v.Logger,
-		}
-
+		c := NewContext(w, r, v.Injections, v.Logger)
 		plugin.Handle(c, next)
 	}
 	v.Use(mux.PluginFunc(pluginFunc))
-
 	return v
 }
 
@@ -374,7 +333,7 @@ func (v *Verto) UseVerto(plugin Plugin) *Verto {
 // RunOn by defaults adds a shutdown endpoint for Verto
 // at /shutdown which can only be called locally.
 func (v *Verto) RunOn(addr string) {
-	if v.doLogging {
+	if v.verbose {
 		v.Logger.Info("Server initializing...")
 	}
 
@@ -389,9 +348,8 @@ func (v *Verto) RunOn(addr string) {
 	}
 	server.Serve(v.sl)
 
-	if v.doLogging {
+	if v.verbose {
 		v.Logger.Info("Server shutting down.")
-		v.Logger.Close()
 	}
 }
 

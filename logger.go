@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -30,12 +31,34 @@ type Logger interface {
 	Close() error
 }
 
+// NilLogger is a logger that implements the logging
+// interface that discards all log messages
+type NilLogger struct{}
+
+func (nl *NilLogger) Info(v ...interface{})                  {}
+func (nl *NilLogger) Debug(v ...interface{})                 {}
+func (nl *NilLogger) Warn(v ...interface{})                  {}
+func (nl *NilLogger) Error(v ...interface{})                 {}
+func (nl *NilLogger) Fatal(v ...interface{})                 {}
+func (nl *NilLogger) Panic(v ...interface{})                 {}
+func (nl *NilLogger) Infof(format string, v ...interface{})  {}
+func (nl *NilLogger) Debugf(format string, v ...interface{}) {}
+func (nl *NilLogger) Warnf(format string, v ...interface{})  {}
+func (nl *NilLogger) Errorf(format string, v ...interface{}) {}
+func (nl *NilLogger) Fatalf(format string, v ...interface{}) {}
+func (nl *NilLogger) Panicf(format string, v ...interface{}) {}
+func (nl *NilLogger) Print(v ...interface{})                 {}
+func (nl *NilLogger) Printf(format string, v ...interface{}) {}
+func (nl *NilLogger) Close() error                           { return nil }
+
 // DefaultLogger is the Verto default implementation of verto.Logger.
 type DefaultLogger struct {
 	subscribers map[string]chan string
 	dropped     map[string][]string
 	errors      []string
 	files       []*os.File
+	closed      bool
+	mut         *sync.Mutex
 }
 
 // NewLogger returns a pointer to a newly initialized VertoLogger instance.
@@ -45,6 +68,8 @@ func NewLogger() *DefaultLogger {
 		dropped:     make(map[string][]string),
 		errors:      make([]string, 0),
 		files:       make([]*os.File, 0),
+		closed:      false,
+		mut:         &sync.Mutex{},
 	}
 }
 
@@ -53,6 +78,9 @@ func NewLogger() *DefaultLogger {
 // the returned channel. NOTE: If a previous subscriber with the same key exists,
 // it will be OVERWRITTEN.
 func (dl *DefaultLogger) AddSubscriber(key string) <-chan string {
+	dl.mut.Lock()
+	defer dl.mut.Unlock()
+
 	dl.subscribers[key] = make(chan string)
 	dl.dropped[key] = make([]string, 0)
 	return dl.subscribers[key]
@@ -61,6 +89,9 @@ func (dl *DefaultLogger) AddSubscriber(key string) <-chan string {
 // AddFile registers an open file for logging. Returns
 // an error if a bad file is passed in.
 func (dl *DefaultLogger) AddFile(f *os.File) error {
+	dl.mut.Lock()
+	defer dl.mut.Unlock()
+
 	if f == nil {
 		return errors.New("logger.AddFile: bad file as argument")
 	}
@@ -73,6 +104,9 @@ func (dl *DefaultLogger) AddFile(f *os.File) error {
 // and will begin writing messages to the file or return an error
 // if an error occured opening up the file.
 func (dl *DefaultLogger) AddFilePath(path string) error {
+	dl.mut.Lock()
+	defer dl.mut.Unlock()
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return err
@@ -103,6 +137,14 @@ func (dl *DefaultLogger) Errors() []string {
 // Errors are recorded and combined into one single error so that an
 // error doesn't prevent the closing of other files.
 func (dl *DefaultLogger) Close() error {
+	dl.mut.Lock()
+	if dl.closed {
+		dl.mut.Unlock()
+		return nil
+	}
+	dl.closed = true
+	dl.mut.Unlock()
+
 	var buf bytes.Buffer
 	for _, v := range dl.files {
 		err := v.Close()
@@ -116,7 +158,10 @@ func (dl *DefaultLogger) Close() error {
 		close(v)
 	}
 
-	return errors.New(buf.String())
+	if buf.Len() > 0 {
+		return errors.New(buf.String())
+	}
+	return nil
 }
 
 // Info prints an info level message to all subscribers and open
@@ -278,7 +323,10 @@ func (dl *DefaultLogger) writeToFiles(msg string) error {
 	var errBuf bytes.Buffer
 
 	for _, f := range dl.files {
+		dl.mut.Lock()
 		_, err := f.WriteString(msg)
+		dl.mut.Unlock()
+
 		if err != nil {
 			errBuf.WriteString(err.Error())
 			errBuf.WriteString("\n")
@@ -286,7 +334,9 @@ func (dl *DefaultLogger) writeToFiles(msg string) error {
 	}
 
 	if errBuf.Len() > 0 {
-		dl.errors = append(dl.errors, errBuf.String())
+		errMsg := errBuf.String()
+		dl.errors = append(dl.errors, errMsg)
+		return errors.New(errMsg)
 	}
 
 	return nil
