@@ -84,7 +84,7 @@ be more strictly defined using regular expressions. Named parameters will be inj
       fmt.Fprintf(c.Response, c.Get("param"))
     })
     endpoint2 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-      fmt.Fprintf(w, r.URL.Query().Get("param"))
+      fmt.Fprintf(w, r.FormValue("param"))
     })
     
     // Named parameters are denoted by { }
@@ -211,18 +211,14 @@ setting and retrieval.
       Injections *Injections
     }
     
-    // Retrieves the first string value associated with the key. Throws an
-    // error if the context was not properly initialized. If calling this function
-    // on a Verto prepared context, an error will not be thrown. This goes for all
-    // of the following functions
-    func (c *Context) Get(key string) (string, error) { }
+    // Retrieves the first string value associated with the key. 
+    func (c *Context) Get(key string) string { }
     
     // Performs exactly like Get() but returns all values associated with the key.
-    func (c *Context) GetMulti(key string) ([]string, error) { }
+    func (c *Context) GetMulti(key string) []string { }
     
     // Performs exactly like Get() but converts the value to a bool if possible.
-    // Throws an error if the conversion fails or if the context was not properly
-    // intialized.
+    // Throws an error if the conversion fails
     func (c *Context) GetBool(key string) (bool, error) { }
     
     // Does the same thing as GetBool() but converts to a float64 instead.
@@ -231,30 +227,26 @@ setting and retrieval.
     // Does the same thing as GetBool() but converts to an int64 instead.
     func (c *Context) GetInt64(key string) (int64, error) { }
     
-    // Sets the value associated with key. Throws an error if context was not
-    // properly initialized. 
-    func (c *Context) Set(key, value string) error { }
+    // Sets the value associated with key.
+    func (c *Context) Set(key, value string) { }
     
-    // Associated multiple values with the key. Throws an error if context
-    // was not properly initialized.
-    func (c *Context) SetMulti(key string, values []string) error { }
+    // Associated multiple values with the key.
+    func (c *Context) SetMulti(key string, values []string) { }
     
-    // Associates a boolean value with the key. Throws an error if context
-    // was not properly initialized or if there was a problem formatting value.
+    // Associates a boolean value with the key. Throws an error if there was a problem formatting value.
     func (c *Context) SetBool(key string, value bool) error { }
     
-    // Associates a float64 value with the key. Throws an error if context
-    // was not properly initialized or if there was a problem formatting value.
+    // Associates a float64 value with the key. Throws an error if there was a problem formatting value.
     func (c *Context) SetFloat64(key string, value float64) error { }
     
-    // Associates a int64 value with the key. Throws an error if context
-    // was not properly initialized or if there was a problem formatting value.
+    // Associates a int64 value with the key. Throws an error if there was a problem formatting value.
     func (c *Context) SetInt64(key string, value int64) error { }
+    
+    // The first call to Get or Set functions will attempt to parse the request query string
+    // and body for parameters so that they are available from the Get functions as well.
+    // Any errors encountered parsing can be retrieved using the ParseErrors function
+    func (c *Context) ParseErrors() error { }
   ```
-
-**Note:** If you happen to be in the business of setting a large number of parameters,  
-consider injecting a custom struct instead of using `Set()` or `SetMulti()`. While the `Set`  
-functions are not super inefficient, they do use `url.Values.Encode()` and `url.Values.Decode()` 
   
 ### Response Handler  
   
@@ -376,10 +368,8 @@ custom loggers that implement the following interface:
     // Print a formatted message to open log files and subscribers
     Printf(format string, v ...interface{})
     
-    // Close any open log files and subscriber channels. Returns
-    // an error if there was any issue closing any files or channels.
-    Close() error
+    // Close should dispose of any resources held by the logger
+    // (e.g. files, channels, etc.)
+    Close()
   }
   ```
-
-Custom logger implementations can be registered using the `RegisterLogger()` function.
