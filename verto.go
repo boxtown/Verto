@@ -5,9 +5,7 @@
 // own error handling and response handling.
 // Verto provides users the option to use
 // middleware globally or per route. The
-// Verto multiplexer is currently not
-// replaceable but that may change in the
-// future.
+// Verto multiplexer is not substitutable
 package verto
 
 import (
@@ -73,26 +71,34 @@ func (pf PluginFunc) Handle(c *Context, next http.HandlerFunc) {
 	pf(c, next)
 }
 
-// Endpoint is a wrapper around mux.Endpoint that allows the use of Verto plugins.
+// Endpoint is an object returned by add route functions
+// that allow the addition of plugins to be executed on the
+// added route. Endpoint is able to handle plain http.Handlers,
+// mux.PluginHandlers, and verto.Plugins as middleware plugins.
+// Endpoint is a wrapper around mux.Endpoint
 type Endpoint struct {
 	mux.Endpoint
 	v *Verto
 }
 
-// Use is a wrapper around mux.Endpoint.Use that returns an Endpoint instead
-// of a mux.Endpoint
+// Use adds a mux.PluginHandler onto the chain of plugins to be executed
+// when the route represented by the Endpoint is requested.
 func (ep *Endpoint) Use(handler mux.PluginHandler) *Endpoint {
 	return &Endpoint{ep.Endpoint.Use(handler), ep.v}
 }
 
-// UseHandler is a wrapper around mux.Endpoint.UseHandler that returns an Endpoint instead
-// of a mux.Endpoint
+// UseHandler adds an http.handler onto the chain of plugins to be
+// executed when the route represented by the Endpoint is requested.
+// http.Handler plugins will always call the next-in-line plugin if
+// one exists
 func (ep *Endpoint) UseHandler(handler http.Handler) *Endpoint {
 	return &Endpoint{ep.Endpoint.UseHandler(handler), ep.v}
 }
 
-// UseVerto wraps a VertoPlugin as a mux.PluginHandler and injects v's injections
-// into the context. Returns the Endpoint for chaining.
+// UseVerto adds a Plugin onto the chain of plugins to be
+// executed when the route represented by the Endpoint is requested.
+// The Plugin will have it's context provided by the Verto instance
+// that generated the Endpoint
 func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := NewContext(w, r, ep.v.Injections, ep.v.Logger)
@@ -101,14 +107,20 @@ func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
 	return &Endpoint{ep.Endpoint.Use(mux.PluginFunc(pluginFunc)), ep.v}
 }
 
-// Group is a wrapper around mux.Group that allows the use of Verto plugins.
+// Group represents a group of routes in Verto. Routes are generally
+// grouped by a shared path prefix but can also be grouped by method
+// as well. Group allows the addition of plugins to be run whenever
+// a path within the group is requested
 type Group struct {
 	g mux.Group
 	v *Verto
 }
 
-// Add is a wrapper around mux.Group.Add wraps rf as an http.Handler and
-// returns an Endpoint instead of a mux.Endpoint
+// Add registers a ResourceFunc at the path under Group. The resulting
+// route will have a full path equivalent to the passed in path appended
+// onto the Group's path prefix. An Endpoint representing the added route
+// is returned. If the path already exists, this function will overwrite the
+// old handler with the passed in ResourceFunc.
 func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
 		c := NewContext(w, r, g.v.Injections, g.v.Logger)
@@ -122,33 +134,41 @@ func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
 	return &Endpoint{g.g.AddFunc(path, handlerFunc), g.v}
 }
 
-// AddHandler is a wrapper around mux.Group.Add that returns an
-// Endpoint instead of a mux.Endpoint
+// AddHandler registers an http.Handler as the handler for the passed in path.
+// AddHandler behaves exactly the same as Add except that it takes in an http.Handler
+// instead of a ResourceFunc
 func (g *Group) AddHandler(path string, handler http.Handler) *Endpoint {
 	return &Endpoint{g.g.Add(path, handler), g.v}
 }
 
-// Group is a wrapper around mux.Group.Group that returns
-// a Group instead of a mux.Group
+// Group registers a sub-Group under the current Group at the
+// passed in path. The new Group's full path is equivalent to
+// the passed in path appended to the current Group's path prefix.
+// Any existing endpoints and groups who might fall under the new Group
+// (e.g. path prefix == new Group's path) will be subsumed by the new Group.
+// If a sub-Group exists with a path that is a path prefix of the would-be new
+// Group, the new Group is added under the sub-Group instead. If a sub-Group already
+// exists at the given path, the existing Group is not overwritten and is returned.
+// Otherwise the newly created Group is returned.
 func (g *Group) Group(path string) *Group {
 	return &Group{g.g.Group(path), g.v}
 }
 
-// Use is a wrapper around mux.Group.Use that returns
-// a Group instead of a mux.Group
+// Use adds a mux.PluginHandler as a plugin to be executed for all
+// paths and sub-Groups under the current group.
 func (g *Group) Use(handler mux.PluginHandler) *Group {
 	return &Group{g.g.Use(handler), g.v}
 }
 
-// UseHandler is a wrapper around mux.Group.UseHandler that
-// returns a Group instead of a mux.Group
+// UseHandler adds an http.Handler as a plugin to be executed for all
+// paths and sub-Groups under the current Group. http.Handler plugins
+// will always call the next-in-line plugin if one exists
 func (g *Group) UseHandler(handler http.Handler) *Group {
 	return &Group{g.g.UseHandler(handler), g.v}
 }
 
-// UseVerto wraps plugin as a mux.PluginFunc and calls
-// mux.Group.Use. UseVerto returns the Group for chaining
-// Use calls.
+// UseVerto adds a Plugin to be executed for all paths and sub-Groups
+// under the current group.
 func (g *Group) UseVerto(plugin Plugin) *Group {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := NewContext(w, r, g.v.Injections, g.v.Logger)
@@ -163,7 +183,16 @@ type ResourceFunc func(c *Context) (interface{}, error)
 // ----------------------------
 // ---------- Verto -----------
 
-// Verto is the framework that runs your application.
+// Verto is a simple and fast REST framework. It has a simple to use but powerful
+// API that allows you to quickly create RESTful Go backends.
+//
+// Example usage:
+//	// Instantiates a new Verto instance and registers a hello world handler
+// 	// at GET /hello/world
+//	v := verto.New()
+//	v.Get("/hello/world", verto.ResourceFunc(func(c *verto.Context) {
+//		return "Hello, World!"
+//	}))
 type Verto struct {
 	Injections      *Injections
 	Logger          Logger
@@ -175,20 +204,20 @@ type Verto struct {
 	muxer   *mux.PathMuxer
 }
 
-// VertoHTTPHandler is a wrapper around Verto such that it can run
+// HttpHandler is a wrapper around Verto such that it can run
 // as an http.handler
-type VertoHTTPHandler struct {
+type HttpHandler struct {
 	*Verto
 }
 
-// ServeHTTP serves request directly to Verto's muxer.
-func (vhh *VertoHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	vhh.muxer.ServeHTTP(w, r)
+// ServeHTTP serves requests directly to Verto's muxer.
+func (handler *HttpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	handler.muxer.ServeHTTP(w, r)
 }
 
-// New returns a pointer to a newly initialized Verto instance.
+// New returns a newly initialized Verto instance.
 // The path /shutdown is automatically reserved as a way to cleanly
-// shutdown the instance but is only available to calls from localhost.
+// shutdown the instance which is only available to calls from localhost.
 func New() *Verto {
 	v := Verto{
 		Logger:     NewLogger(),
@@ -216,8 +245,8 @@ func New() *Verto {
 }
 
 // Add registers a specific method+path combination to
-// a resource function. Any function registered using
-// Add() can be assured the Context will not be null
+// a resource function and returns an Endpoint representing
+// said resource
 func (v *Verto) Add(
 	method, path string,
 	rf ResourceFunc) *Endpoint {
@@ -236,7 +265,8 @@ func (v *Verto) Add(
 }
 
 // AddHandler registers a specific method+path combination to
-// an http.Handler.
+// an http.Handler and returns an Endpoint representing said
+// resource
 func (v *Verto) AddHandler(
 	method, path string,
 	handler http.Handler) *Endpoint {
@@ -249,7 +279,7 @@ func (v *Verto) Group(method, path string) *Group {
 }
 
 // Get is a wrapper function around Add() that sets the method
-// as commonly GET
+// as GET
 func (v *Verto) Get(path string, rf ResourceFunc) *Endpoint {
 	return v.Add("GET", path, rf)
 }
@@ -261,65 +291,69 @@ func (v *Verto) GetHandler(path string, handler http.Handler) *Endpoint {
 }
 
 // Put is a wrapper function around Add() that sets the method
-// as commonly PUT
+// as PUT
 func (v *Verto) Put(path string, rf ResourceFunc) *Endpoint {
 	return v.Add("PUT", path, rf)
 }
 
 // PutHandler is a wrapper function around AddHandler() that sets the method
-// as commonly PUT
+// as PUT
 func (v *Verto) PutHandler(path string, handler http.Handler) *Endpoint {
 	return v.AddHandler("PUT", path, handler)
 }
 
 // Post is a wrapper function around Add() that sets the method
-// as commonly POST
+// as POST
 func (v *Verto) Post(path string, rf ResourceFunc) *Endpoint {
 	return v.Add("POST", path, rf)
 }
 
 // PostHandler is a wrapper function around AddHandler() that sets the method
-// as commonly POST
+// as POST
 func (v *Verto) PostHandler(path string, handler http.Handler) *Endpoint {
 	return v.AddHandler("POST", path, handler)
 }
 
 // Delete is a wrapper function around Add() that sets the method
-// as commonly DELETE
+// as DELETE
 func (v *Verto) Delete(path string, rf ResourceFunc) *Endpoint {
 	return v.Add("DELETE", path, rf)
 }
 
 // DeleteHandler is a wrapper function around AddHandler() that sets the method
-// as commonly DELETE
+// as DELETE
 func (v *Verto) DeleteHandler(path string, handler http.Handler) *Endpoint {
 	return v.AddHandler("DELETE", path, handler)
 }
 
-// SetVerbose sets whether the Verto instance is verbose or not
+// SetVerbose sets whether the Verto instance is verbose or not.
 func (v *Verto) SetVerbose(verbose bool) {
 	v.verbose = verbose
 }
 
-// SetStrict sets whether to do strict path matching or not.
+// SetStrict sets whether to do strict path matching or not. If false,
+// Verto will attempt to redirect trailing slashes to non-trailing slash
+// paths if they exist and vice versa. The default is true which means
+// Verto treats trailing slash as a different path than non-trailing slash
 func (v *Verto) SetStrict(strict bool) {
 	v.muxer.Strict = strict
 }
 
-// Use registers a global plugin. Plugins are called in order of definition.
-// This function is just a wrapper for the muxer's global plugin chain.
+// Use registers a mux.PluginHandler as a global plugin.
+// to run for all groups and paths registered to the Verto instance.
+// Plugins are called in order of definition.
 func (v *Verto) Use(handler mux.PluginHandler) *Verto {
 	v.muxer.Use(handler)
 	return v
 }
 
-// UseHandler wraps an http.Handler as a PluginHandler and calls Verto.Use().
+// UseHandler wraps an http.Handler as a mux.PluginHandler and calls Verto.Use().
 func (v *Verto) UseHandler(handler http.Handler) *Verto {
 	v.muxer.UseHandler(handler)
 	return v
 }
 
-// UseVerto wraps a VertoPlugin as a PluginHandler and calls Verto.Use().
+// UseVerto wraps a Plugin as a mux.PluginHandler and calls Verto.Use().
 func (v *Verto) UseVerto(plugin Plugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		c := NewContext(w, r, v.Injections, v.Logger)
@@ -363,22 +397,22 @@ func (v *Verto) Run() {
 
 // DefaultErrorFunc is the default error handling
 // function for Verto. DefaultErrorFunc sends a 500 response
-// and the error message as the response body.
+// and writes the error's error message to the response body.
 func DefaultErrorFunc(err error, c *Context) {
 	c.Response.WriteHeader(500)
 	fmt.Fprint(c.Response, err.Error())
 }
 
 // DefaultResponseFunc is the default response handling
-// function for Verto. DefaultResponseFunc sends a 200 response with
-// response as the response body.
+// function for Verto. DefaultResponseFunc sends a 200 response and
+// attempts to write the response directly to the http response body.
 func DefaultResponseFunc(response interface{}, c *Context) {
 	c.Response.WriteHeader(200)
 	fmt.Fprint(c.Response, response)
 }
 
 // GetIP retrieves the ip address of the requester. GetIp recognizes
-// the "x-forwarded-for" header.
+// the "X-Forwarded-For" header.
 func GetIP(r *http.Request) string {
 	if ip := r.Header.Get("x-forwarded-for"); len(ip) > 0 {
 		return ip

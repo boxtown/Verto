@@ -2,14 +2,15 @@ package verto
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"sync"
 	"time"
 )
 
-// Logger is the interface for Verto Logging.
+// Logger is the interface for Logging in the Verto framework.
+// A default implementation is provided along with a "nil"
+// implementation.
 type Logger interface {
 	Info(v ...interface{})
 	Debug(v ...interface{})
@@ -28,11 +29,11 @@ type Logger interface {
 	Print(v ...interface{})
 	Printf(format string, v ...interface{})
 
-	Close() error
+	Close()
 }
 
 // NilLogger is a logger that implements the logging
-// interface that discards all log messages
+// interface such that all its functions are no-ops
 type NilLogger struct{}
 
 func (nl *NilLogger) Info(v ...interface{})                  {}
@@ -51,32 +52,39 @@ func (nl *NilLogger) Print(v ...interface{})                 {}
 func (nl *NilLogger) Printf(format string, v ...interface{}) {}
 func (nl *NilLogger) Close() error                           { return nil }
 
-// DefaultLogger is the Verto default implementation of verto.Logger.
+// DefaultLogger is the Verto default implementation of the Logger interface.
+// This logger is thread-safe.
 type DefaultLogger struct {
 	subscribers map[string]chan string
 	dropped     map[string][]string
-	errors      []string
+	errors      map[string][]error
 	files       []*os.File
 	closed      bool
 	mut         *sync.Mutex
+
+	// DropTimeout is the duration before a message is dropped
+	// when attempting to pipe messages to a subscriber
+	DropTimeout time.Duration
 }
 
-// NewLogger returns a pointer to a newly initialized VertoLogger instance.
+// NewLogger returns a newly initialized VertoLogger instance.
 func NewLogger() *DefaultLogger {
 	return &DefaultLogger{
 		subscribers: make(map[string]chan string),
 		dropped:     make(map[string][]string),
-		errors:      make([]string, 0),
+		errors:      make(map[string][]error),
 		files:       make([]*os.File, 0),
 		closed:      false,
 		mut:         &sync.Mutex{},
+
+		DropTimeout: time.Duration(250 * time.Millisecond),
 	}
 }
 
-// AddSubscriber adds a channel between the logger and subscriber to
-// VertoLogger. Any messages written by VertoLogger will be piped out to
-// the returned channel. NOTE: If a previous subscriber with the same key exists,
-// it will be OVERWRITTEN.
+// AddSubscriber registers a channel with the logger and returns the channel.
+// Any messages written to the logger will be piped out to the returned channel.
+//
+// NOTE: If a previous subscriber with the same key exists, it will be OVERWRITTEN.
 func (dl *DefaultLogger) AddSubscriber(key string) <-chan string {
 	dl.mut.Lock()
 	defer dl.mut.Unlock()
@@ -86,18 +94,15 @@ func (dl *DefaultLogger) AddSubscriber(key string) <-chan string {
 	return dl.subscribers[key]
 }
 
-// AddFile registers an open file for logging. Returns
-// an error if a bad file is passed in.
-func (dl *DefaultLogger) AddFile(f *os.File) error {
+// AddFile registers an open file for logging. The caller
+// should take care to make sure the file is valid for writing.
+// The logger will handle closing the file when the logger is closed.
+func (dl *DefaultLogger) AddFile(f *os.File) {
 	dl.mut.Lock()
 	defer dl.mut.Unlock()
 
-	if f == nil {
-		return errors.New("logger.AddFile: bad file as argument")
-	}
-
 	dl.files = append(dl.files, f)
-	return nil
+	dl.errors[f.Name()] = make([]error, 0)
 }
 
 // AddFilePath attempts to open the file at path as append-only
@@ -117,6 +122,7 @@ func (dl *DefaultLogger) AddFilePath(path string) error {
 	}
 
 	dl.files = append(dl.files, f)
+	dl.errors[f.Name()] = make([]error, 0)
 	return nil
 }
 
@@ -129,39 +135,29 @@ func (dl *DefaultLogger) Dropped(key string) []string {
 
 // Errors returns a slice of all errors that occured
 // while writing to files
-func (dl *DefaultLogger) Errors() []string {
+func (dl *DefaultLogger) Errors() map[string][]error {
 	return dl.errors
 }
 
 // Close attempts to close all opened files attached to VertoLogger.
-// Errors are recorded and combined into one single error so that an
-// error doesn't prevent the closing of other files.
-func (dl *DefaultLogger) Close() error {
+// Any errors encountered while closing files are captured in the errors map
+func (dl *DefaultLogger) Close() {
 	dl.mut.Lock()
 	if dl.closed {
 		dl.mut.Unlock()
-		return nil
+		return
 	}
 	dl.closed = true
 	dl.mut.Unlock()
 
-	var buf bytes.Buffer
-	for _, v := range dl.files {
-		err := v.Close()
-		if err != nil {
-			buf.WriteString(err.Error())
-			buf.WriteString("\n")
+	for _, f := range dl.files {
+		if err := f.Close(); err != nil {
+			dl.errors[f.Name()] = append(dl.errors[f.Name()], err)
 		}
 	}
-
 	for _, v := range dl.subscribers {
 		close(v)
 	}
-
-	if buf.Len() > 0 {
-		return errors.New(buf.String())
-	}
-	return nil
 }
 
 // Info prints an info level message to all subscribers and open
@@ -312,32 +308,21 @@ func (dl *DefaultLogger) pushToSubs(msg string) {
 		select {
 		case s <- msg:
 			break
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(dl.DropTimeout):
 			dl.dropped[k] = append(dl.dropped[k], msg)
 		}
 	}
 }
 
 // Writes a string message to all open log files.
-func (dl *DefaultLogger) writeToFiles(msg string) error {
-	var errBuf bytes.Buffer
-
+func (dl *DefaultLogger) writeToFiles(msg string) {
 	for _, f := range dl.files {
 		dl.mut.Lock()
 		_, err := f.WriteString(msg)
 		dl.mut.Unlock()
 
 		if err != nil {
-			errBuf.WriteString(err.Error())
-			errBuf.WriteString("\n")
+			dl.errors[f.Name()] = append(dl.errors[f.Name()], err)
 		}
 	}
-
-	if errBuf.Len() > 0 {
-		errMsg := errBuf.String()
-		dl.errors = append(dl.errors, errMsg)
-		return errors.New(errMsg)
-	}
-
-	return nil
 }

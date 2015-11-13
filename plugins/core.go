@@ -1,3 +1,6 @@
+// plugins is package providing a number of common middleware plugins
+// for the Verto framework. Currently included are plugins for
+// compression handling, panic recovery, and CORS handling
 package plugins
 
 import (
