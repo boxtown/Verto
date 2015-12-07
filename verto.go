@@ -9,10 +9,14 @@
 package verto
 
 import (
+	"crypto/tls"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"github.com/boxtown/verto/mux"
 	"net"
 	"net/http"
+	"sync"
 )
 
 // -------------------------------------------
@@ -101,7 +105,10 @@ func (ep *Endpoint) UseHandler(handler http.Handler) *Endpoint {
 // that generated the Endpoint
 func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := NewContext(w, r, ep.v.Injections, ep.v.Logger)
+		ep.v.mutex.RLock()
+		c := NewContext(w, r, ep.v.icloneMap[r], ep.v.Logger)
+		ep.v.mutex.RUnlock()
+
 		plugin.Handle(c, next)
 	}
 	return &Endpoint{ep.Endpoint.Use(mux.PluginFunc(pluginFunc)), ep.v}
@@ -123,7 +130,10 @@ type Group struct {
 // old handler with the passed in ResourceFunc.
 func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
-		c := NewContext(w, r, g.v.Injections, g.v.Logger)
+		g.v.mutex.RLock()
+		c := NewContext(w, r, g.v.icloneMap[r], g.v.Logger)
+		g.v.mutex.RUnlock()
+
 		response, err := rf(c)
 		if err != nil {
 			g.v.ErrorHandler.Handle(err, c)
@@ -171,7 +181,10 @@ func (g *Group) UseHandler(handler http.Handler) *Group {
 // under the current group.
 func (g *Group) UseVerto(plugin Plugin) *Group {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := NewContext(w, r, g.v.Injections, g.v.Logger)
+		g.v.mutex.RLock()
+		c := NewContext(w, r, g.v.icloneMap[r], g.v.Logger)
+		g.v.mutex.RUnlock()
+
 		plugin.Handle(c, next)
 	}
 	return &Group{g.g.Use(mux.PluginFunc(pluginFunc)), g.v}
@@ -193,15 +206,34 @@ type ResourceFunc func(c *Context) (interface{}, error)
 //	v.Get("/hello/world", verto.ResourceFunc(func(c *verto.Context) {
 //		return "Hello, World!"
 //	}))
+//
+// Verto can be configured to use TLS by providing a *tls.Config.
+// If a tls.Config is provided, Verto will automatically default to using
+// TLS
+//
+// Example:
+//  v := verto.New()
+//  cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+//  if err != nil {
+//    panic(err.Error())
+//  }
+//  v.TLSConfig = &tls.Config{
+//    Certificates: []tls.Certificate{cert}
+//  }
+//  v.Run()
+//
 type Verto struct {
-	Injections      *Injections
+	IContainer      *IContainer
 	Logger          Logger
 	ErrorHandler    ErrorHandler
 	ResponseHandler ResponseHandler
+	TLSConfig       *tls.Config
 
-	verbose bool
-	sl      *StoppableListener
-	muxer   *mux.PathMuxer
+	verbose   bool
+	l         net.Listener
+	muxer     *mux.PathMuxer
+	icloneMap map[*http.Request]*IClone
+	mutex     *sync.RWMutex
 }
 
 // HttpHandler is a wrapper around Verto such that it can run
@@ -220,11 +252,15 @@ func (handler *HttpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // shutdown the instance which is only available to calls from localhost.
 func New() *Verto {
 	v := Verto{
+		IContainer: NewContainer(),
 		Logger:     NewLogger(),
-		verbose:    false,
-		muxer:      mux.New(),
-		Injections: NewInjections(),
+
+		verbose:   false,
+		muxer:     mux.New(),
+		icloneMap: make(map[*http.Request]*IClone),
+		mutex:     &sync.RWMutex{},
 	}
+	v.setInjectionPlugins()
 
 	// Reserve shutdown path
 	v.muxer.AddFunc(
@@ -233,11 +269,13 @@ func New() *Verto {
 		func(w http.ResponseWriter, r *http.Request) {
 			ip := GetIP(r)
 			if ip == "127.0.0.1" || ip == "::1" {
-				v.sl.Stop()
+				v.Stop()
 			} else {
 				v.muxer.NotFound.ServeHTTP(w, r)
 			}
 		})
+
+	// initialize clone plugins
 
 	v.ErrorHandler = ErrorFunc(DefaultErrorFunc)
 	v.ResponseHandler = ResponseFunc(DefaultResponseFunc)
@@ -252,7 +290,10 @@ func (v *Verto) Add(
 	rf ResourceFunc) *Endpoint {
 
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
-		c := NewContext(w, r, v.Injections, v.Logger)
+		v.mutex.RLock()
+		c := NewContext(w, r, v.icloneMap[r], v.Logger)
+		v.mutex.RUnlock()
+
 		response, err := rf(c)
 		if err != nil {
 			v.ErrorHandler.Handle(err, c)
@@ -356,7 +397,10 @@ func (v *Verto) UseHandler(handler http.Handler) *Verto {
 // UseVerto wraps a Plugin as a mux.PluginHandler and calls Verto.Use().
 func (v *Verto) UseVerto(plugin Plugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		c := NewContext(w, r, v.Injections, v.Logger)
+		v.mutex.RLock()
+		c := NewContext(w, r, v.icloneMap[r], v.Logger)
+		v.mutex.RUnlock()
+
 		plugin.Handle(c, next)
 	}
 	v.Use(mux.PluginFunc(pluginFunc))
@@ -375,12 +419,16 @@ func (v *Verto) RunOn(addr string) {
 	if err != nil {
 		panic(err)
 	}
-	v.sl, _ = WrapListener(listener)
+	v.l, _ = WrapListener(listener)
+
+	if v.TLSConfig != nil {
+		v.l = tls.NewListener(v.l, v.TLSConfig)
+	}
 
 	server := http.Server{
 		Handler: v.muxer,
 	}
-	server.Serve(v.sl)
+	server.Serve(v.l)
 
 	if v.verbose {
 		v.Logger.Info("Server shutting down.")
@@ -390,6 +438,28 @@ func (v *Verto) RunOn(addr string) {
 // Run runs Verto on address ":8080".
 func (v *Verto) Run() {
 	v.RunOn(":8080")
+}
+
+// Stops the Verto instance
+func (v *Verto) Stop() {
+	v.l.Close()
+}
+
+func (v *Verto) setInjectionPlugins() {
+	v.Use(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		next(w, r)
+
+		v.mutex.Lock()
+		delete(v.icloneMap, r)
+		v.mutex.Unlock()
+	}))
+	v.Use(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		v.mutex.Lock()
+		v.icloneMap[r] = v.IContainer.Clone()
+		v.mutex.Unlock()
+
+		next(w, r)
+	}))
 }
 
 // -------------------------------
@@ -407,8 +477,31 @@ func DefaultErrorFunc(err error, c *Context) {
 // function for Verto. DefaultResponseFunc sends a 200 response and
 // attempts to write the response directly to the http response body.
 func DefaultResponseFunc(response interface{}, c *Context) {
-	c.Response.WriteHeader(200)
 	fmt.Fprint(c.Response, response)
+}
+
+// JSONResponseFunc attempts to write the returned response to
+// the ResponseWriter as JSON. JSONResponseFunc Will return an HTTP 500
+// error if the marshalling failed
+func JSONResponseFunc(response interface{}, c *Context) {
+	if marshalled, err := json.Marshal(response); err != nil {
+		c.Response.WriteHeader(500)
+		fmt.Fprint(c.Response, "Could not marshal response as JSON")
+	} else {
+		c.Response.Write(marshalled)
+	}
+}
+
+// XMLResponseFunc attempts to write the returned response to
+// the ResponseWriter as XML. XMLResponseFunc will return an HTTP 500
+// error if the marshalling failed.
+func XMLResponseFunc(response interface{}, c *Context) {
+	if marshalled, err := xml.Marshal(response); err != nil {
+		c.Response.WriteHeader(500)
+		fmt.Fprint(c.Response, "Could not marshal response as XML")
+	} else {
+		c.Response.Write(marshalled)
+	}
 }
 
 // GetIP retrieves the ip address of the requester. GetIp recognizes

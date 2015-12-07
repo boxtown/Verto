@@ -1,7 +1,8 @@
-package plugins
+package compression
 
 import (
 	"github.com/boxtown/verto"
+	"github.com/boxtown/verto/plugins"
 	"io"
 	"net/http"
 	"strings"
@@ -13,12 +14,12 @@ import (
 // gzip and deflate
 type Compression struct {
 	// Core is the core functionality for plugins
-	Core
+	plugins.Core
 }
 
-// NewCompression returns a newly initialized Compression plugin
-func NewCompression() *Compression {
-	return &Compression{Core: Core{id: "plugins.Compression"}}
+// New returns a newly initialized Compression plugin
+func New() *Compression {
+	return &Compression{Core: plugins.Core{Id: "plugins.Compression"}}
 }
 
 // Handle is called on per web request to supply a compression writer to the
@@ -42,7 +43,7 @@ func (plugin *Compression) Handle(c *verto.Context, next http.HandlerFunc) {
 					ref := pool.get(w, ctGzip)
 					defer ref.dispose()
 
-					w = &compressionWriter{
+					w = &writer{
 						Writer:         ref.w,
 						ResponseWriter: w,
 					}
@@ -55,7 +56,7 @@ func (plugin *Compression) Handle(c *verto.Context, next http.HandlerFunc) {
 					ref := pool.get(w, ctFlate)
 					defer ref.dispose()
 
-					w = &compressionWriter{
+					w = &writer{
 						Writer:         ref.w,
 						ResponseWriter: w,
 					}
@@ -67,25 +68,25 @@ func (plugin *Compression) Handle(c *verto.Context, next http.HandlerFunc) {
 		}, c, next)
 }
 
-// compressionWriter implements io.Writer as well as http.ResponseWriter.
+// writer implements io.Writer as well as http.ResponseWriter.
 // It is assumed that the io.Writer is a compression writer that wraps
 // the http.ResponseWriter
-type compressionWriter struct {
+type writer struct {
 	io.Writer
 	http.ResponseWriter
 }
 
-func (w compressionWriter) Header() http.Header {
+func (w writer) Header() http.Header {
 	return w.ResponseWriter.Header()
 }
 
-func (w compressionWriter) Write(b []byte) (int, error) {
+func (w writer) Write(b []byte) (int, error) {
 	if len(w.Header().Get("Content-Type")) == 0 {
 		w.Header().Set("Content-Type", http.DetectContentType(b))
 	}
 	return w.Writer.Write(b)
 }
 
-func (w compressionWriter) WriteHeader(code int) {
+func (w writer) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }

@@ -1,10 +1,11 @@
 package verto
 
 import (
+	"sync"
 	"testing"
 )
 
-func TestInjectionsGet(t *testing.T) {
+func TestIContainerGet(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -14,8 +15,8 @@ func TestInjectionsGet(t *testing.T) {
 
 	err := "Failed get."
 
-	i := NewInjections()
-	i.data["a"] = "b"
+	i := NewContainer()
+	i.data["a"] = &injectionDef{obj: "b"}
 
 	// Test basic get
 	data := i.Get("a")
@@ -38,7 +39,7 @@ func TestInjectionsGet(t *testing.T) {
 	}
 }
 
-func TestInjectionsTryGet(t *testing.T) {
+func TestIContainerTryGet(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -48,8 +49,8 @@ func TestInjectionsTryGet(t *testing.T) {
 
 	err := "Failed try get."
 
-	i := NewInjections()
-	i.data["a"] = "b"
+	i := NewContainer()
+	i.data["a"] = &injectionDef{obj: "b"}
 
 	// Test basic try get
 	data, ok := i.TryGet("a")
@@ -69,7 +70,9 @@ func TestInjectionsTryGet(t *testing.T) {
 	}
 
 	// Test thread safety
+	var wg sync.WaitGroup
 	for j := 0; j < 10; j++ {
+		wg.Add(1)
 		go func() {
 			data, ok := i.TryGet("a")
 			if !ok {
@@ -80,11 +83,36 @@ func TestInjectionsTryGet(t *testing.T) {
 			} else if v != "b" {
 				t.Errorf(err)
 			}
+			wg.Done()
 		}()
+	}
+	wg.Wait()
+
+	// Test lazy init
+	i.data["a"] = &injectionDef{fn: func(r ReadOnlyInjections) interface{} { return "b" }, lifetime: SINGLETON}
+	wg = sync.WaitGroup{}
+	for j := 0; j < 10; j++ {
+		wg.Add(1)
+		go func() {
+			data, _ := i.TryGet("a")
+			if v, ok := data.(string); !ok {
+				t.Errorf(err)
+			} else if v != "b" {
+				t.Errorf(err)
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	i.data["a"] = &injectionDef{fn: func(r ReadOnlyInjections) interface{} { return "b" }, lifetime: REQUEST}
+	data, _ = i.TryGet("a")
+	if data != nil {
+		t.Errorf(err)
 	}
 }
 
-func TestInjectionsSet(t *testing.T) {
+func TestIContainerSet(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -94,7 +122,7 @@ func TestInjectionsSet(t *testing.T) {
 
 	err := "Failed set."
 
-	i := NewInjections()
+	i := NewContainer()
 
 	// Test basic set
 	i.Set("a", "b")
@@ -113,7 +141,61 @@ func TestInjectionsSet(t *testing.T) {
 	}
 }
 
-func TestInjectionsDelete(t *testing.T) {
+func TestIContainerLazy(t *testing.T) {
+	defer func() {
+		err := recover()
+		if err != nil {
+			t.Errorf(err.(error).Error())
+		}
+	}()
+
+	err := "Failed lazy."
+
+	i := NewContainer()
+	i.Set("key", "val")
+
+	// Test basic lazy
+	i.Lazy("a", func(r ReadOnlyInjections) interface{} { return "b" }, SINGLETON)
+	data := i.Get("a")
+	if v, ok := data.(string); !ok {
+		t.Errorf(err)
+	} else if v != "b" {
+		t.Errorf(err)
+	}
+
+	// Test thread safety
+	i.Lazy("b",
+		func(r ReadOnlyInjections) interface{} {
+			v := r.Get("b")
+			if v != nil {
+				// this shouldn't occur because
+				// of the scoping
+				return "c"
+			}
+			return "b"
+		}, REQUEST)
+
+	var wg sync.WaitGroup
+	for j := 0; j < 10000; j++ {
+		wg.Add(1)
+		clone := i.Clone()
+		go func(clone *IClone, val int) {
+			v := clone.Get("b")
+			if v != "b" {
+				t.Errorf(err)
+			}
+			wg.Done()
+		}(clone, j)
+	}
+	wg.Wait()
+
+	data = i.Get("b")
+	if data != nil {
+		t.Errorf(err)
+	}
+}
+
+func TestIContainerDelete(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -123,7 +205,7 @@ func TestInjectionsDelete(t *testing.T) {
 
 	err := "Failed delete."
 
-	i := NewInjections()
+	i := NewContainer()
 	i.Set("a", "b")
 	i.Delete("a")
 	_, ok := i.TryGet("a")
@@ -132,7 +214,7 @@ func TestInjectionsDelete(t *testing.T) {
 	}
 }
 
-func TestInjectionsClear(t *testing.T) {
+func TestIContainerClear(t *testing.T) {
 	defer func() {
 		err := recover()
 		if err != nil {
@@ -142,7 +224,7 @@ func TestInjectionsClear(t *testing.T) {
 
 	err := "Failed clear injections."
 
-	i := NewInjections()
+	i := NewContainer()
 
 	i.Set("a", "b")
 	i.Set("c", "d")

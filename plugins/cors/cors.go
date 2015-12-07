@@ -1,14 +1,15 @@
-package plugins
+package cors
 
 import (
 	"github.com/boxtown/verto"
+	"github.com/boxtown/verto/plugins"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// CorsOptions is a struct containing Cors plugin
+// Options is a struct containing Cors plugin
 // configuration options. MaxAge, if included, must
 // be at least 1 second long. AllowedOrigins, AllowedHeaders,
 // and AllowedMethods all support the wildcard designation '*'.
@@ -18,7 +19,7 @@ import (
 // Note: It is good security practice to explicitly define
 // allowed origins, methods and headers instead of relying
 // on a wildcard.
-type CorsOptions struct {
+type Options struct {
 	// AllowedOrigins designates a series of origins
 	// as allowable for the 'Origin' header of incoming
 	// requests. AllowedOrigins recognizes the wildcard
@@ -74,7 +75,7 @@ type CorsOptions struct {
 //		AllowedMethods: []string{"GET", "POST"}
 //	})
 type Cors struct {
-	Core
+	plugins.Core
 
 	allowedOrigins   map[string]bool
 	allowedOriginsFn func(string) bool
@@ -90,8 +91,8 @@ type Cors struct {
 // NewCors returns a new Cors plugin instance that is unconfigured.
 // It is best practice to call either the Configure or Default functions
 // immediately on the newly instantiated plugin instance
-func NewCors() *Cors {
-	return &Cors{Core: Core{id: "plugins.Cors"}}
+func New() *Cors {
+	return &Cors{Core: plugins.Core{Id: "plugins.Cors"}}
 }
 
 // Configure configures the Cors plugin according to the passed
@@ -105,12 +106,12 @@ func NewCors() *Cors {
 //	cors := NewCors().Configure(&CorsOptions{
 // 		...
 //	})
-func (plugin *Cors) Configure(opts *CorsOptions) *Cors {
+func (plugin *Cors) Configure(opts *Options) *Cors {
 	// Each consecutive call to configure creates a fresh
 	// plugin state
 	p := plugin
 	if plugin.configured {
-		p = NewCors()
+		p = New()
 	}
 
 	// Set allowable origin handling logic
@@ -163,7 +164,7 @@ func (plugin *Cors) Configure(opts *CorsOptions) *Cors {
 //	cors := NewCors().Default()
 func (plugin *Cors) Default() *Cors {
 	return plugin.Configure(
-		&CorsOptions{
+		&Options{
 			AllowedOrigins: []string{"*"},
 			AllowedHeaders: []string{"Origin", "Accept", "Content-Type"},
 			AllowedMethods: []string{"GET", "POST"},

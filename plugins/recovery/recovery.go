@@ -1,7 +1,8 @@
-package plugins
+package recovery
 
 import (
 	"github.com/boxtown/verto"
+	"github.com/boxtown/verto/plugins"
 	"net/http"
 )
 
@@ -9,7 +10,7 @@ import (
 // for web requests
 type Recovery struct {
 	// Core is the core functionality for plugins
-	Core
+	plugins.Core
 
 	// OnRecover is the custom panic recovery function supplied by
 	// the user. If OnRecover is nil, the plugin will just bubble the
@@ -17,9 +18,9 @@ type Recovery struct {
 	OnRecover func(rMsg interface{}, c *verto.Context)
 }
 
-// NewRecovery instantiates and returns a new instance of a Recovery plugin
-func NewRecovery() *Recovery {
-	return &Recovery{Core: Core{id: "plugins.Recovery"}}
+// New instantiates and returns a new instance of a Recovery plugin
+func New() *Recovery {
+	return &Recovery{Core: plugins.Core{Id: "plugins.Recovery"}}
 }
 
 // Handle is called per web request to protect from program panics. If the OnRecover

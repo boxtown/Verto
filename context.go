@@ -25,7 +25,7 @@ type Context struct {
 
 	// This field is populated by Verto based on user
 	// set injections.
-	Injections *Injections
+	Injections Injections
 
 	// If Verto has a registered Logger, it can be
 	// accessed here.
@@ -38,7 +38,7 @@ type Context struct {
 
 // NewContext initializes a new Context with the passed in response, request,
 // injections, and logger
-func NewContext(w http.ResponseWriter, r *http.Request, i *Injections, l Logger) *Context {
+func NewContext(w http.ResponseWriter, r *http.Request, i *IClone, l Logger) *Context {
 	return &Context{
 		Response:   w,
 		Request:    r,

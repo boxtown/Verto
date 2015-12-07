@@ -1,9 +1,10 @@
-package plugins
+package compression
 
 import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"github.com/boxtown/verto"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,7 +20,7 @@ func TestCompressionPlugin(t *testing.T) {
 
 	err := "Failed compression."
 
-	plugin := CompressionPlugin()
+	plugin := New()
 
 	endpoint := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("test"))
@@ -28,7 +29,7 @@ func TestCompressionPlugin(t *testing.T) {
 	// Test no compression
 	r, _ := http.NewRequest("GET", "http://test.com", nil)
 	w := httptest.NewRecorder()
-	c := &Context{Request: r, Response: w}
+	c := &verto.Context{Request: r, Response: w}
 
 	plugin.Handle(c, endpoint)
 	if w.Body.String() != "test" {
@@ -42,7 +43,7 @@ func TestCompressionPlugin(t *testing.T) {
 	r, _ = http.NewRequest("GET", "http://test.com", nil)
 	r.Header.Add("Accept-Encoding", "gzip")
 	w = httptest.NewRecorder()
-	c = &Context{Request: r, Response: w}
+	c = &verto.Context{Request: r, Response: w}
 	plugin.Handle(c, endpoint)
 
 	reader := bytes.NewReader(w.Body.Bytes())
@@ -63,7 +64,7 @@ func TestCompressionPlugin(t *testing.T) {
 	r, _ = http.NewRequest("GET", "http://test.com", nil)
 	r.Header.Add("Accept-Encoding", "deflate")
 	w = httptest.NewRecorder()
-	c = &Context{Request: r, Response: w}
+	c = &verto.Context{Request: r, Response: w}
 	plugin.Handle(c, endpoint)
 
 	reader = bytes.NewReader(w.Body.Bytes())

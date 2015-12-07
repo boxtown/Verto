@@ -76,20 +76,20 @@ func (mr *matcherResults) params() []param {
 	return mr.p
 }
 
-// ---------- pathIndexer ----------
+// ---------- pathIterator ----------
 // ---------------------------------
 
-// pathIndexer returns the start and end indexes
+// pathIterator returns the start and end indexes
 // of path segments separated by /'s for efficient
 // inline path parsing.
-type pathIndexer struct {
+type pathIterator struct {
 	path   string
 	sBegin int
 	ts     bool
 }
 
 // Returns true if the indexer lies on the trailing slash
-func (p *pathIndexer) atTrailingSlash() bool {
+func (p *pathIterator) atTrailingSlash() bool {
 	if p.sBegin != len(p.path) || len(p.path) == 0 {
 		return false
 	}
@@ -104,19 +104,19 @@ func (p *pathIndexer) atTrailingSlash() bool {
 // This is necessary because calling next() on the trailing slash
 // will advance the indexer such that atTrailingSlash() returns false
 // but we need to know if there was a trailing slash for redirects.
-func (p *pathIndexer) seenTrailingSlash() bool {
+func (p *pathIterator) seenTrailingSlash() bool {
 	return p.ts
 }
 
 // Returns true if there is more of the path to index or we are at
 // the trailing slash
-func (p *pathIndexer) hasNext() bool {
+func (p *pathIterator) hasNext() bool {
 	return p.sBegin < len(p.path) || p.atTrailingSlash()
 }
 
 // Returns the next path segment delimited by slashes
 // or an empty string if we lay on the trailing slash.
-func (p *pathIndexer) next() string {
+func (p *pathIterator) next() string {
 	i := p.sBegin
 	if p.atTrailingSlash() {
 		p.sBegin++
@@ -159,7 +159,7 @@ func newMatcherNode() *matcherNode {
 // Private function that adds object as data at path and returns
 // number of encountered path parameters
 func (n *matcherNode) add(path string, c compilable) int {
-	pi := pathIndexer{path: path}
+	pi := pathIterator{path: path}
 	nparams := 0
 
 	for pi.hasNext() {
@@ -242,7 +242,7 @@ func (n *matcherNode) apply(f func(c compilable)) {
 // If the path is not found, the function returns without applying
 // f.
 func (n *matcherNode) applyAt(path string, f func(c compilable)) {
-	pi := pathIndexer{path: path}
+	pi := pathIterator{path: path}
 	for pi.hasNext() {
 		s := pi.next()
 		child, ok := n.children[s]
@@ -267,7 +267,7 @@ func (n *matcherNode) applyAt(path string, f func(c compilable)) {
 // starting { and ending }. Dropped subtrees are completely
 // deleted.
 func (n *matcherNode) drop(path string) {
-	pi := pathIndexer{path: path}
+	pi := pathIterator{path: path}
 	var s string
 
 	for pi.hasNext() {
@@ -290,7 +290,7 @@ func (n *matcherNode) drop(path string) {
 
 // Private matching function that contains all the matching logic
 func (n *matcherNode) match(path string, explicit bool, maxParams int) (results, error) {
-	pi := pathIndexer{path: path}
+	pi := pathIterator{path: path}
 	results := newResults(maxParams)
 	var mrg compilable
 

@@ -37,7 +37,6 @@ func WrapListener(listener net.Listener) (*StoppableListener, error) {
 func (sl *StoppableListener) Accept() (net.Conn, error) {
 	for {
 		sl.SetDeadline(time.Now().Add(time.Second))
-
 		netConn, err := sl.TCPListener.Accept()
 
 		select {
@@ -57,7 +56,12 @@ func (sl *StoppableListener) Accept() (net.Conn, error) {
 	}
 }
 
-//Stop sends a stop command to the listener.
-func (sl *StoppableListener) Stop() {
-	close(sl.stop)
+// Close sends a stop command to the listener.
+func (sl *StoppableListener) Close() error {
+	select {
+	case <-sl.stop:
+	default:
+		close(sl.stop)
+	}
+	return nil
 }

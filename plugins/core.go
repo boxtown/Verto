@@ -23,18 +23,21 @@ type Core struct {
 	// time the plugin exits execution
 	OnExit func(c *verto.Context)
 
-	// id is an id for the plugin
-	id string
+	// Id is an id for the plugin
+	Id string
 }
 
+// Handle wraps a plugin function within Core plugin
+// functionality. This allows the OnEnter and OnExit
+// functions to run for the wrapped plugin
 func (core Core) Handle(
 	f func(*verto.Context, http.HandlerFunc),
 	c *verto.Context,
 	next http.HandlerFunc) {
 
 	if core.Verbose {
-		c.Logger.Infof("Entering %s...", core.id)
-		defer c.Logger.Infof("Exiting %s...", core.id)
+		c.Logger.Infof("Entering %s...", core.Id)
+		defer c.Logger.Infof("Exiting %s...", core.Id)
 	}
 	if core.OnEnter != nil {
 		core.OnEnter(c)

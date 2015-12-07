@@ -1,4 +1,4 @@
-package plugins
+package compression
 
 import (
 	"compress/flate"
@@ -16,6 +16,13 @@ type writerRef struct {
 // writer to the pool or disposing of the writer if
 // the pool is full
 func (ref *writerRef) dispose() {
+	switch w := ref.w.(type) {
+	case *flate.Writer:
+		w.Flush()
+	case *gzip.Writer:
+		w.Flush()
+	}
+
 	select {
 	case ref.disposal <- ref.w:
 	default:
@@ -34,17 +41,17 @@ const (
 	ctGzip compressType = 1
 )
 
-// compressWriterPool is a concurrency-safe pool of compression writers
-type compressWriterPool struct {
+// writerPool is a concurrency-safe pool of compression writers
+type writerPool struct {
 	flatePool chan io.WriteCloser
 	gzipPool  chan io.WriteCloser
 }
 
-// newCompressWriterPool returns a compressWriterPool reference
+// newWriterPool returns a compressWriterPool reference
 // with maxWriters as the maximum number of poolable writers per
 // compressionType
-func newCompressWriterPool(maxWriters int) *compressWriterPool {
-	return &compressWriterPool{
+func newWriterPool(maxWriters int) *writerPool {
+	return &writerPool{
 		flatePool: make(chan io.WriteCloser, maxWriters),
 		gzipPool:  make(chan io.WriteCloser, maxWriters),
 	}
@@ -53,7 +60,7 @@ func newCompressWriterPool(maxWriters int) *compressWriterPool {
 // get attempts to retrieve a writer of type ct from the pool and wrap it
 // around inner or, if no writers are available creates a new writer of type
 // ct around inner
-func (pool *compressWriterPool) get(inner io.Writer, ct compressType) *writerRef {
+func (pool *writerPool) get(inner io.Writer, ct compressType) *writerRef {
 	var w io.WriteCloser
 	var disposal chan<- io.WriteCloser
 
@@ -81,4 +88,4 @@ func (pool *compressWriterPool) get(inner io.Writer, ct compressType) *writerRef
 }
 
 // global pool of compression writers
-var pool = newCompressWriterPool(1000)
+var pool = newWriterPool(1000)
