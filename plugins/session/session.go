@@ -46,9 +46,9 @@ type Plugin struct {
 	Factory Factory
 }
 
-// NewPlugin returns a new instance of the session Plugin
+// New returns a new instance of the session Plugin
 // that uses the passed in factory to create session instances
-func NewPlugin(factory Factory) *Plugin {
+func New(factory Factory) *Plugin {
 	return &Plugin{
 		Core:    plugins.Core{Id: "plugins.Session"},
 		Factory: factory,
