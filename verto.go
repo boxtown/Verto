@@ -85,9 +85,24 @@ type Endpoint struct {
 	v *Verto
 }
 
-// Use adds a mux.PluginHandler onto the chain of plugins to be executed
+// Use adds a Plugin onto the chain of plugins to be
+// executed when the route represented by the Endpoint is requested.
+// The Plugin will have it's context provided by the Verto instance
+// that generated the Endpoint
+func (ep *Endpoint) Use(plugin Plugin) *Endpoint {
+	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		ep.v.mutex.RLock()
+		c := NewContext(w, r, ep.v.icloneMap[r], ep.v.Logger)
+		ep.v.mutex.RUnlock()
+
+		plugin.Handle(c, next)
+	}
+	return &Endpoint{ep.Endpoint.Use(mux.PluginFunc(pluginFunc)), ep.v}
+}
+
+// UsePluginHandler adds a mux.PluginHandler onto the chain of plugins to be executed
 // when the route represented by the Endpoint is requested.
-func (ep *Endpoint) Use(handler mux.PluginHandler) *Endpoint {
+func (ep *Endpoint) UsePluginHandler(handler mux.PluginHandler) *Endpoint {
 	return &Endpoint{ep.Endpoint.Use(handler), ep.v}
 }
 
@@ -97,21 +112,6 @@ func (ep *Endpoint) Use(handler mux.PluginHandler) *Endpoint {
 // one exists
 func (ep *Endpoint) UseHandler(handler http.Handler) *Endpoint {
 	return &Endpoint{ep.Endpoint.UseHandler(handler), ep.v}
-}
-
-// UseVerto adds a Plugin onto the chain of plugins to be
-// executed when the route represented by the Endpoint is requested.
-// The Plugin will have it's context provided by the Verto instance
-// that generated the Endpoint
-func (ep *Endpoint) UseVerto(plugin Plugin) *Endpoint {
-	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		ep.v.mutex.RLock()
-		c := NewContext(w, r, ep.v.icloneMap[r], ep.v.Logger)
-		ep.v.mutex.RUnlock()
-
-		plugin.Handle(c, next)
-	}
-	return &Endpoint{ep.Endpoint.Use(mux.PluginFunc(pluginFunc)), ep.v}
 }
 
 // Group represents a group of routes in Verto. Routes are generally
@@ -164,22 +164,9 @@ func (g *Group) Group(path string) *Group {
 	return &Group{g.g.Group(path), g.v}
 }
 
-// Use adds a mux.PluginHandler as a plugin to be executed for all
-// paths and sub-Groups under the current group.
-func (g *Group) Use(handler mux.PluginHandler) *Group {
-	return &Group{g.g.Use(handler), g.v}
-}
-
-// UseHandler adds an http.Handler as a plugin to be executed for all
-// paths and sub-Groups under the current Group. http.Handler plugins
-// will always call the next-in-line plugin if one exists
-func (g *Group) UseHandler(handler http.Handler) *Group {
-	return &Group{g.g.UseHandler(handler), g.v}
-}
-
-// UseVerto adds a Plugin to be executed for all paths and sub-Groups
+// Use adds a Plugin to be executed for all paths and sub-Groups
 // under the current group.
-func (g *Group) UseVerto(plugin Plugin) *Group {
+func (g *Group) Use(plugin Plugin) *Group {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		g.v.mutex.RLock()
 		c := NewContext(w, r, g.v.icloneMap[r], g.v.Logger)
@@ -188,6 +175,19 @@ func (g *Group) UseVerto(plugin Plugin) *Group {
 		plugin.Handle(c, next)
 	}
 	return &Group{g.g.Use(mux.PluginFunc(pluginFunc)), g.v}
+}
+
+// UsePluginHandler adds a mux.PluginHandler as a plugin to be executed for all
+// paths and sub-Groups under the current group.
+func (g *Group) UsePluginHandler(handler mux.PluginHandler) *Group {
+	return &Group{g.g.Use(handler), g.v}
+}
+
+// UseHandler adds an http.Handler as a plugin to be executed for all
+// paths and sub-Groups under the current Group. http.Handler plugins
+// will always call the next-in-line plugin if one exists
+func (g *Group) UseHandler(handler http.Handler) *Group {
+	return &Group{g.g.UseHandler(handler), g.v}
 }
 
 // ResourceFunc is the Verto-specific function for endpoint resource handling.
@@ -380,22 +380,8 @@ func (v *Verto) SetStrict(strict bool) {
 	v.muxer.Strict = strict
 }
 
-// Use registers a mux.PluginHandler as a global plugin.
-// to run for all groups and paths registered to the Verto instance.
-// Plugins are called in order of definition.
-func (v *Verto) Use(handler mux.PluginHandler) *Verto {
-	v.muxer.Use(handler)
-	return v
-}
-
-// UseHandler wraps an http.Handler as a mux.PluginHandler and calls Verto.Use().
-func (v *Verto) UseHandler(handler http.Handler) *Verto {
-	v.muxer.UseHandler(handler)
-	return v
-}
-
-// UseVerto wraps a Plugin as a mux.PluginHandler and calls Verto.Use().
-func (v *Verto) UseVerto(plugin Plugin) *Verto {
+// Use wraps a Plugin as a mux.PluginHandler and calls Verto.Use().
+func (v *Verto) Use(plugin Plugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		v.mutex.RLock()
 		c := NewContext(w, r, v.icloneMap[r], v.Logger)
@@ -404,6 +390,20 @@ func (v *Verto) UseVerto(plugin Plugin) *Verto {
 		plugin.Handle(c, next)
 	}
 	v.Use(mux.PluginFunc(pluginFunc))
+	return v
+}
+
+// UsePluginHandler registers a mux.PluginHandler as a global plugin.
+// to run for all groups and paths registered to the Verto instance.
+// Plugins are called in order of definition.
+func (v *Verto) UsePluginHandler(handler mux.PluginHandler) *Verto {
+	v.muxer.Use(handler)
+	return v
+}
+
+// UseHandler wraps an http.Handler as a mux.PluginHandler and calls Verto.Use().
+func (v *Verto) UseHandler(handler http.Handler) *Verto {
+	v.muxer.UseHandler(handler)
 	return v
 }
 
