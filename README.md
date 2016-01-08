@@ -132,8 +132,8 @@ If the middleware comes in the form of an `http.Handler`, next is automatically 
     // Register global plugins: These will run for every single
     // request. Middleware is served first come - first serve.
     v.UseHandler(mw1)
-    v.Use(mw2)
-    v.UseVerto(mw3)
+    v.UsePluginHandler(mw2)
+    v.Use(mw3)
     
     // Register route
     v.Add("GET", "/", func(c *verto.Context) (interface{}, error) {
@@ -150,7 +150,7 @@ Middleware can also be chained per route
     // will only be run for GET requests on /.
     v.Add("GET", "/", func(c *verto.Context) (interface{}, error) {
       ...
-    }).UseHandler(mw1).Use(mw2).UseVerto(mw3)
+    }).UseHandler(mw1).UsePluginHandler(mw2).Use(mw3)
   ```
   
 ### Groups
@@ -303,8 +303,10 @@ the user brings his own handler. The default just responds with a `500 Internal 
 ### Injections  
   
 Injections are anything from the outside world you need passed to an endpoint  
-handler. A single injection instance is passed to all handlers and plugins.  
-**NOTE:** The `Set()`, `Get()`, `TryGet()`, `Delete()`, and `Clear()` functions **ARE** thread safe.  
+handler. A thread-local copy of the Injections struct is provided to each request
+in order to support per-request lazy initialization of injections
+
+**NOTE:** All Injections functions **ARE** thread safe.  
   
   ```Go
     // Injection example
@@ -313,6 +315,20 @@ handler. A single injection instance is passed to all handlers and plugins.
     // is the key used to access then injection from within
     // any handlers or plugins that implement verto.PluginFunc.
     v.Injections.Set("key", "value")
+    
+    // Lazily inject objects that have a high initialization cost
+    // The lifetime can be set to SINGLETON so that the object is only
+    // initialized once on the first call to Get/TryGet, or REQUEST so
+    // that the factory function is called per first call of Get/TryGet
+    // per request. The factory function provided to the lazy function
+    // takes in an interface ReadOnlyInjections that allows lazy injections
+    // to be instantiated based on other injected objects. ReadOnlyInjections
+    // only supports the Get/TryGet functions but otherwise works the same
+    // as Injections
+    v.Injections.Lazy("cache-client", 
+      func(r verto.ReadOnlyInjections) interface{} {
+        return interface{} // example placeholder
+      }, verto.REQUEST)
     
     // Inject anything like slices or structs
     sl := make([]int64, 5)
