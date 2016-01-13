@@ -1,6 +1,7 @@
 package verto
 
 import (
+	"net/http"
 	"sync"
 	"testing"
 )
@@ -89,7 +90,7 @@ func TestIContainerTryGet(t *testing.T) {
 	wg.Wait()
 
 	// Test lazy init
-	i.data["a"] = &injectionDef{fn: func(r ReadOnlyInjections) interface{} { return "b" }, lifetime: SINGLETON}
+	i.data["a"] = &injectionDef{fn: func(w http.ResponseWriter, r *http.Request, i ReadOnlyInjections) interface{} { return "b" }, lifetime: SINGLETON}
 	wg = sync.WaitGroup{}
 	for j := 0; j < 10; j++ {
 		wg.Add(1)
@@ -105,7 +106,7 @@ func TestIContainerTryGet(t *testing.T) {
 	}
 	wg.Wait()
 
-	i.data["a"] = &injectionDef{fn: func(r ReadOnlyInjections) interface{} { return "b" }, lifetime: REQUEST}
+	i.data["a"] = &injectionDef{fn: func(w http.ResponseWriter, r *http.Request, i ReadOnlyInjections) interface{} { return "b" }, lifetime: REQUEST}
 	data, _ = i.TryGet("a")
 	if data != nil {
 		t.Errorf(err)
@@ -155,7 +156,7 @@ func TestIContainerLazy(t *testing.T) {
 	i.Set("key", "val")
 
 	// Test basic lazy
-	i.Lazy("a", func(r ReadOnlyInjections) interface{} { return "b" }, SINGLETON)
+	i.Lazy("a", func(w http.ResponseWriter, r *http.Request, i ReadOnlyInjections) interface{} { return "b" }, SINGLETON)
 	data := i.Get("a")
 	if v, ok := data.(string); !ok {
 		t.Errorf(err)
@@ -165,8 +166,8 @@ func TestIContainerLazy(t *testing.T) {
 
 	// Test thread safety
 	i.Lazy("b",
-		func(r ReadOnlyInjections) interface{} {
-			v := r.Get("b")
+		func(w http.ResponseWriter, r *http.Request, i ReadOnlyInjections) interface{} {
+			v := i.Get("b")
 			if v != nil {
 				// this shouldn't occur because
 				// of the scoping
@@ -178,7 +179,7 @@ func TestIContainerLazy(t *testing.T) {
 	var wg sync.WaitGroup
 	for j := 0; j < 10000; j++ {
 		wg.Add(1)
-		clone := i.Clone()
+		clone := i.Clone(nil, nil)
 		go func(clone *IClone, val int) {
 			v := clone.Get("b")
 			if v != "b" {

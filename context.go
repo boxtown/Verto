@@ -23,9 +23,12 @@ type Context struct {
 	// The original *http.Request
 	Request *http.Request
 
-	// This field is populated by Verto based on user
-	// set injections.
-	Injections Injections
+	// Factory functions for retrieving injections
+	// Since Contexts are created per-request, this function
+	// allows each context to receive a request-unique
+	// Injections instance allowing for per-request lazy
+	// initializations
+	Injections func() Injections
 
 	// If Verto has a registered Logger, it can be
 	// accessed here.
@@ -38,7 +41,7 @@ type Context struct {
 
 // NewContext initializes a new Context with the passed in response, request,
 // injections, and logger
-func NewContext(w http.ResponseWriter, r *http.Request, i *IClone, l Logger) *Context {
+func NewContext(w http.ResponseWriter, r *http.Request, i func() Injections, l Logger) *Context {
 	return &Context{
 		Response:   w,
 		Request:    r,

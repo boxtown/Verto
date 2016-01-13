@@ -61,8 +61,8 @@ func (plugin *Plugin) Handle(c *verto.Context, next http.HandlerFunc) {
 	plugin.Core.Handle(
 		func(c *verto.Context, next http.HandlerFunc) {
 			c.Injections.Lazy(SESSIONKEY,
-				func(r verto.ReadOnlyInjections) interface{} {
-					return plugin.Factory.Create(c.Response, c.Request)
+				func(w http.ResponseWriter, r *http.Request, i verto.ReadOnlyInjections) interface{} {
+					return plugin.Factory.Create(w, r)
 				}, verto.REQUEST)
 		}, c, next)
 }

@@ -1,6 +1,7 @@
 package verto
 
 import (
+	"net/http"
 	"sync"
 )
 
@@ -13,8 +14,11 @@ const (
 
 // FactoryFn represents a factory function for lazy initialization
 // of injectable objects. FactoryFn takes in a ReadOnlyInjections interface
-// to allow ReadOnly access to the outer Injections container
-type FactoryFn func(r ReadOnlyInjections) interface{}
+// to allow ReadOnly access to the outer Injections container as well
+// as a http.ResponseWriter and http.Request that is populated
+// if the function is called per-request. If the function is set with
+// a SINGLETON LifeTime, w and r will be nil
+type FactoryFn func(w http.ResponseWriter, r *http.Request, i ReadOnlyInjections) interface{}
 
 // Injections is a thread-safe map of keys to data objects.
 // Injections is used by Verto to allow outside dependencies to
@@ -74,9 +78,11 @@ func NewContainer() *IContainer {
 }
 
 // Clone returns a thread-specific clone of the IContainer.
-func (i *IContainer) Clone() *IClone {
+func (i *IContainer) Clone(w http.ResponseWriter, r *http.Request) *IClone {
 	return &IClone{
 		IContainer: i,
+		w:          w,
+		r:          r,
 		mutex:      &sync.RWMutex{},
 		threadData: make(map[string]interface{}),
 	}
@@ -124,7 +130,7 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 				// If the lifetime is singleton, then we evaluate
 				// the factory function, release the write-lock and return
 				// the evaluated value
-				val = v.fn(readOnlyInjections{&IClone{IContainer: i}})
+				val = v.fn(nil, nil, readOnlyInjections{&IClone{IContainer: i}})
 				v.obj = val
 				i.mutex.Unlock()
 				return val, true
@@ -197,6 +203,8 @@ func (i *IContainer) Clear() {
 type IClone struct {
 	*IContainer
 
+	w          http.ResponseWriter
+	r          *http.Request
 	mutex      *sync.RWMutex
 	threadData map[string]interface{}
 }
@@ -250,7 +258,7 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 			if v.lifetime == SINGLETON {
 				// Lifetime is singleton. Evaluate function, set value,
 				// release the write-lock and return the value
-				val = v.fn(readOnlyInjections{i})
+				val = v.fn(i.w, i.r, readOnlyInjections{i})
 				v.obj = val
 				i.IContainer.mutex.Unlock()
 				return val, true
@@ -271,7 +279,7 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 					// Condition still holds after acquiring thread specific write-lock,
 					// evaluate the function, set the value in thread specific data,
 					// release the thread specific write-lock and return the value
-					val = v.fn(readOnlyInjections{i})
+					val = v.fn(i.w, i.r, readOnlyInjections{i})
 					i.threadData[key] = val
 					i.mutex.Unlock()
 					return val, true

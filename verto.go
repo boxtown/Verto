@@ -92,7 +92,7 @@ type Endpoint struct {
 func (ep *Endpoint) Use(plugin Plugin) *Endpoint {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		ep.v.mutex.RLock()
-		c := NewContext(w, r, ep.v.icloneMap[r], ep.v.Logger)
+		c := NewContext(w, r, func() Injections { return ep.v.icloneMap[r] }, ep.v.Logger)
 		ep.v.mutex.RUnlock()
 
 		plugin.Handle(c, next)
@@ -131,7 +131,7 @@ type Group struct {
 func (g *Group) Add(path string, rf ResourceFunc) *Endpoint {
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
 		g.v.mutex.RLock()
-		c := NewContext(w, r, g.v.icloneMap[r], g.v.Logger)
+		c := NewContext(w, r, func() Injections { return g.v.icloneMap[r] }, g.v.Logger)
 		g.v.mutex.RUnlock()
 
 		response, err := rf(c)
@@ -169,7 +169,7 @@ func (g *Group) Group(path string) *Group {
 func (g *Group) Use(plugin Plugin) *Group {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		g.v.mutex.RLock()
-		c := NewContext(w, r, g.v.icloneMap[r], g.v.Logger)
+		c := NewContext(w, r, func() Injections { return g.v.icloneMap[r] }, g.v.Logger)
 		g.v.mutex.RUnlock()
 
 		plugin.Handle(c, next)
@@ -291,7 +291,7 @@ func (v *Verto) Add(
 
 	handlerFunc := func(w http.ResponseWriter, r *http.Request) {
 		v.mutex.RLock()
-		c := NewContext(w, r, v.icloneMap[r], v.Logger)
+		c := NewContext(w, r, func() Injections { return v.icloneMap[r] }, v.Logger)
 		v.mutex.RUnlock()
 
 		response, err := rf(c)
@@ -384,12 +384,12 @@ func (v *Verto) SetStrict(strict bool) {
 func (v *Verto) Use(plugin Plugin) *Verto {
 	pluginFunc := func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		v.mutex.RLock()
-		c := NewContext(w, r, v.icloneMap[r], v.Logger)
+		c := NewContext(w, r, func() Injections { return v.icloneMap[r] }, v.Logger)
 		v.mutex.RUnlock()
 
 		plugin.Handle(c, next)
 	}
-	v.Use(mux.PluginFunc(pluginFunc))
+	v.muxer.Use(mux.PluginFunc(pluginFunc))
 	return v
 }
 
@@ -446,16 +446,16 @@ func (v *Verto) Stop() {
 }
 
 func (v *Verto) setInjectionPlugins() {
-	v.Use(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	v.UsePluginHandler(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		next(w, r)
 
 		v.mutex.Lock()
 		delete(v.icloneMap, r)
 		v.mutex.Unlock()
 	}))
-	v.Use(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	v.UsePluginHandler(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		v.mutex.Lock()
-		v.icloneMap[r] = v.IContainer.Clone()
+		v.icloneMap[r] = v.IContainer.Clone(w, r)
 		v.mutex.Unlock()
 
 		next(w, r)
