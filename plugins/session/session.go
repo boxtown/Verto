@@ -60,7 +60,7 @@ func New(factory Factory) *Plugin {
 func (plugin *Plugin) Handle(c *verto.Context, next http.HandlerFunc) {
 	plugin.Core.Handle(
 		func(c *verto.Context, next http.HandlerFunc) {
-			c.Injections.Lazy(SESSIONKEY,
+			c.Injections().Lazy(SESSIONKEY,
 				func(w http.ResponseWriter, r *http.Request, i verto.ReadOnlyInjections) interface{} {
 					return plugin.Factory.Create(w, r)
 				}, verto.REQUEST)
