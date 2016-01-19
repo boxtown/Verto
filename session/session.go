@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/boxtown/verto"
-	"github.com/boxtown/verto/plugins"
 	"io"
 	"net/http"
 	"strings"
@@ -35,37 +34,6 @@ var ErrMissingKey = errors.New("Missing required hashKey argument")
 // SESSIONKEY is the constant name used to denote both the verto
 // session cookie and the session injection
 const SESSIONKEY = "_VertoSession"
-
-// Plugin is a plugin that instantiates a relevant
-// session instance per request based on the SessionFactory
-// defined in the plugin. At most one instance of this plugin
-// should exist at any point in the request chain
-type Plugin struct {
-	plugins.Core
-
-	Factory Factory
-}
-
-// New returns a new instance of the session Plugin
-// that uses the passed in factory to create session instances
-func New(factory Factory) *Plugin {
-	return &Plugin{
-		Core:    plugins.Core{Id: "plugins.Session"},
-		Factory: factory,
-	}
-}
-
-// Handle lazily initiates a session instance per http request
-// and stores the instance inside the Injections instance inside the verto Context
-func (plugin *Plugin) Handle(c *verto.Context, next http.HandlerFunc) {
-	plugin.Core.Handle(
-		func(c *verto.Context, next http.HandlerFunc) {
-			c.Injections().Lazy(SESSIONKEY,
-				func(w http.ResponseWriter, r *http.Request, i verto.ReadOnlyInjections) interface{} {
-					return plugin.Factory.Create(w, r)
-				}, verto.REQUEST)
-		}, c, next)
-}
 
 // Session is an interface for interacting with session
 // data. Session implementations must be thread-safe
