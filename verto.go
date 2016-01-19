@@ -223,7 +223,7 @@ type ResourceFunc func(c *Context) (interface{}, error)
 //  v.Run()
 //
 type Verto struct {
-	IContainer      *IContainer
+	Injections      *IContainer
 	Logger          Logger
 	ErrorHandler    ErrorHandler
 	ResponseHandler ResponseHandler
