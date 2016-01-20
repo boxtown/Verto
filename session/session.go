@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/boxtown/verto"
 	"io"
 	"net/http"
 	"strings"
