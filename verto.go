@@ -252,7 +252,7 @@ func (handler *HttpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // shutdown the instance which is only available to calls from localhost.
 func New() *Verto {
 	v := Verto{
-		IContainer: NewContainer(),
+		Injections: NewContainer(),
 		Logger:     NewLogger(),
 
 		verbose:   false,
@@ -455,7 +455,7 @@ func (v *Verto) setInjectionPlugins() {
 	}))
 	v.UsePluginHandler(mux.PluginFunc(func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
 		v.mutex.Lock()
-		v.icloneMap[r] = v.IContainer.Clone(w, r)
+		v.icloneMap[r] = v.Injections.Clone(w, r)
 		v.mutex.Unlock()
 
 		next(w, r)
