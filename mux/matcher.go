@@ -406,7 +406,7 @@ func (m *matcher) drop(path string) {
 	m.root.drop(path)
 }
 
-// Match returns the object registered at path or an error if none exist.
+// match returns the object registered at path or an error if none exist.
 // Wildcard segments are observed. ErrNotFound is returned if no matching path
 // exists and a trailing slash redirect (tsr) isn't possible. ErrRedirect is returned
 // if no matching path exists but a tsr is possible.
@@ -417,7 +417,7 @@ func (m *matcher) match(path string) (results, error) {
 	return m.root.match(path, false, m.mp)
 }
 
-// MatchNoRegex performs in the same manner as Match except that it doesn't
+// matchExplicit performs in the same manner as match except that it doesn't
 // check regex restrictions on wildcard parameters.
 func (m *matcher) matchExplicit(path string) (results, error) {
 	if m.root == nil {
@@ -426,7 +426,7 @@ func (m *matcher) matchExplicit(path string) (results, error) {
 	return m.root.match(path, true, m.mp)
 }
 
-// MaxParams returns the maximum possible number of
+// maxParams returns the maximum possible number of
 // parameters in the Matcher based on the added paths.
 func (m *matcher) maxParams() int {
 	return m.mp
