@@ -115,7 +115,16 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 	}
 
 	var val interface{}
-	if v.obj == nil && v.fn != nil {
+	if v.obj == nil {
+        
+        // if a factory function wasn't provided,
+        // then the injection essentially doesn't exist,
+        // release the read lock and return
+        if v.fn == nil {
+            i.mutex.RUnlock()
+            return nil, false    
+        }
+        
 		// if the definition needs to be lazily evaluated,
 		// we have to release the read lock and re-lock
 		// with the write lock
@@ -124,7 +133,7 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 		i.mutex.Lock()
 
 		// double check condition after acquiring write lock
-		if v.obj == nil && v.fn != nil {
+		if v.obj == nil {
 			// condition still holds, proceed to evaluation logic
 			if v.lifetime == SINGLETON {
 				// If the lifetime is singleton, then we evaluate
@@ -141,7 +150,7 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 				i.mutex.Unlock()
 				return nil, false
 			}
-		} else if v.obj != nil {
+		} else {
 			// if object has been evaluated since we released the read-lock
 			// and acquired the write-lock, release write-lock and return value
 			val = v.obj
@@ -235,7 +244,15 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 	}
 
 	var val interface{}
-	if v.obj == nil && v.fn != nil {
+	if v.obj == nil {
+        // if a factory function wasn't provided,
+        // then the injection essentially doesn't exist,
+        // release the read lock and return
+        if v.fn == nil {
+            i.mutex.RUnlock()
+            return nil, false    
+        }
+        
 		// If the definition needs to be lazily evaluated,
 		// then we must release the read-lock and proceed with more
 		// specific locking
@@ -252,7 +269,7 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 		// Value not in thread data, try to evaluate fn
 		// double-check condition first
 		i.IContainer.mutex.Lock()
-		if v.obj == nil && v.fn != nil {
+		if v.obj == nil {
 			// Condition still holds after checking thread data
 			// and acquiring write-lock, proceed to evaluation logic
 			if v.lifetime == SINGLETON {
@@ -285,7 +302,7 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 					return val, true
 				}
 			}
-		} else if v.obj != nil {
+		} else {
 			// Object has been evaluated since we released the read-lock and
 			// acquired the write-lock. Release the write-lock and return the
 			// evaluated value

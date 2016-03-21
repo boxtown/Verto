@@ -1,2 +1,6 @@
 *.sh
+*.test
 *bench*
+
+# ignore vs code files
+/.vscode/
