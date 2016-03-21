@@ -114,7 +114,6 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	var val interface{}
 	if v.obj == nil {
         
         // if a factory function wasn't provided,
@@ -130,6 +129,9 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 		// with the write lock
 
 		i.mutex.RUnlock()
+        
+        val := v.fn(nil, nil, readOnlyInjections{&IClone{IContainer: i}})
+        
 		i.mutex.Lock()
 
 		// double check condition after acquiring write lock
@@ -139,7 +141,6 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 				// If the lifetime is singleton, then we evaluate
 				// the factory function, release the write-lock and return
 				// the evaluated value
-				val = v.fn(nil, nil, readOnlyInjections{&IClone{IContainer: i}})
 				v.obj = val
 				i.mutex.Unlock()
 				return val, true
@@ -153,16 +154,14 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 		} else {
 			// if object has been evaluated since we released the read-lock
 			// and acquired the write-lock, release write-lock and return value
-			val = v.obj
 			i.mutex.Unlock()
-			return val, true
+			return v.obj, true
 		}
 	}
 
 	// Value exists, release the read-lock and return the value
-	val = v.obj
 	i.mutex.RUnlock()
-	return val, true
+	return v.obj, true
 }
 
 // Set associates a value with a key for this container and all its
@@ -243,13 +242,12 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 		return nil, false
 	}
 
-	var val interface{}
 	if v.obj == nil {
         // if a factory function wasn't provided,
         // then the injection essentially doesn't exist,
         // release the read lock and return
         if v.fn == nil {
-            i.mutex.RUnlock()
+            i.IContainer.mutex.RUnlock()
             return nil, false    
         }
         
@@ -265,6 +263,10 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 			return check, true
 		}
 		i.mutex.RUnlock()
+        
+        // run factory unlocked to prevent issues with
+        // double locking in the readOnlyInjections
+        val := v.fn(i.w, i.r, readOnlyInjections{i})
 
 		// Value not in thread data, try to evaluate fn
 		// double-check condition first
@@ -275,7 +277,6 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 			if v.lifetime == SINGLETON {
 				// Lifetime is singleton. Evaluate function, set value,
 				// release the write-lock and return the value
-				val = v.fn(i.w, i.r, readOnlyInjections{i})
 				v.obj = val
 				i.IContainer.mutex.Unlock()
 				return val, true
@@ -296,7 +297,6 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 					// Condition still holds after acquiring thread specific write-lock,
 					// evaluate the function, set the value in thread specific data,
 					// release the thread specific write-lock and return the value
-					val = v.fn(i.w, i.r, readOnlyInjections{i})
 					i.threadData[key] = val
 					i.mutex.Unlock()
 					return val, true
@@ -306,16 +306,14 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 			// Object has been evaluated since we released the read-lock and
 			// acquired the write-lock. Release the write-lock and return the
 			// evaluated value
-			val = v.obj
 			i.IContainer.mutex.Unlock()
-			return val, true
+			return v.obj, true
 		}
 	}
 
 	// Value exists, release read-lock and return value
-	val = v.obj
 	i.IContainer.mutex.RUnlock()
-	return val, true
+	return v.obj, true
 }
 
 // Delete will delete the key value association in the global
