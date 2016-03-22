@@ -115,23 +115,23 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 	}
 
 	if v.obj == nil {
-        
-        // if a factory function wasn't provided,
-        // then the injection essentially doesn't exist,
-        // release the read lock and return
-        if v.fn == nil {
-            i.mutex.RUnlock()
-            return nil, false    
-        }
-        
+		
+		// if a factory function wasn't provided,
+		// then the injection essentially doesn't exist,
+		// release the read lock and return
+		if v.fn == nil {
+			i.mutex.RUnlock()
+			return nil, false    
+		}
+		
 		// if the definition needs to be lazily evaluated,
 		// we have to release the read lock and re-lock
 		// with the write lock
 
 		i.mutex.RUnlock()
-        
-        val := v.fn(nil, nil, readOnlyInjections{&IClone{IContainer: i}})
-        
+		
+		val := v.fn(nil, nil, readOnlyInjections{&IClone{IContainer: i}})
+		
 		i.mutex.Lock()
 
 		// double check condition after acquiring write lock
@@ -243,14 +243,14 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 	}
 
 	if v.obj == nil {
-        // if a factory function wasn't provided,
-        // then the injection essentially doesn't exist,
-        // release the read lock and return
-        if v.fn == nil {
-            i.IContainer.mutex.RUnlock()
-            return nil, false    
-        }
-        
+		// if a factory function wasn't provided,
+		// then the injection essentially doesn't exist,
+		// release the read lock and return
+		if v.fn == nil {
+			i.IContainer.mutex.RUnlock()
+			return nil, false    
+		}
+		
 		// If the definition needs to be lazily evaluated,
 		// then we must release the read-lock and proceed with more
 		// specific locking
@@ -263,10 +263,10 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 			return check, true
 		}
 		i.mutex.RUnlock()
-        
-        // run factory unlocked to prevent issues with
-        // double locking in the readOnlyInjections
-        val := v.fn(i.w, i.r, readOnlyInjections{i})
+		
+		// run factory unlocked to prevent issues with
+		// double locking in the readOnlyInjections
+		val := v.fn(i.w, i.r, readOnlyInjections{i})
 
 		// Value not in thread data, try to evaluate fn
 		// double-check condition first
