@@ -21,7 +21,7 @@ type Context struct {
 	Response http.ResponseWriter
 
 	// The original *http.Request
-	Request *http.Request
+	Request *http.Request 
 
 	// Factory functions for retrieving injections
 	// Since Contexts are created per-request, this function
