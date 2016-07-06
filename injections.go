@@ -11,12 +11,12 @@ import (
 type LifeTime int64
 
 const (
-    // SINGLETON is a lifetime for lazy injections
-    // that are instantiated only once
+	// SINGLETON is a lifetime for lazy injections
+	// that are instantiated only once
 	SINGLETON LifeTime = iota
-    
-    // REQUEST is a lifetime for lazy injections
-    // that should be re-initialized per request
+
+	// REQUEST is a lifetime for lazy injections
+	// that should be re-initialized per request
 	REQUEST
 )
 
@@ -123,23 +123,23 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 	}
 
 	if v.obj == nil {
-		
+
 		// if a factory function wasn't provided,
 		// then the injection essentially doesn't exist,
 		// release the read lock and return
 		if v.fn == nil {
 			i.mutex.RUnlock()
-			return nil, false    
+			return nil, false
 		}
-		
+
 		// if the definition needs to be lazily evaluated,
 		// we have to release the read lock and re-lock
 		// with the write lock
 
 		i.mutex.RUnlock()
-		
+
 		val := v.fn(nil, nil, readOnlyInjections{&IClone{IContainer: i}})
-		
+
 		i.mutex.Lock()
 
 		// double check condition after acquiring write lock
@@ -152,19 +152,19 @@ func (i *IContainer) TryGet(key string) (interface{}, bool) {
 				v.obj = val
 				i.mutex.Unlock()
 				return val, true
-			} 
-            
-            // Since this is the master container, it doesn't make
-            // sense to evaluate per-request lifetime functions.
-            // Release the write-lock and return negative
-            i.mutex.Unlock()
-            return nil, false
+			}
+
+			// Since this is the master container, it doesn't make
+			// sense to evaluate per-request lifetime functions.
+			// Release the write-lock and return negative
+			i.mutex.Unlock()
+			return nil, false
 		}
-        
-        // if object has been evaluated since we released the read-lock
-        // and acquired the write-lock, release write-lock and return value
-        i.mutex.Unlock()
-        return v.obj, true
+
+		// if object has been evaluated since we released the read-lock
+		// and acquired the write-lock, release write-lock and return value
+		i.mutex.Unlock()
+		return v.obj, true
 	}
 
 	// Value exists, release the read-lock and return the value
@@ -256,9 +256,9 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 		// release the read lock and return
 		if v.fn == nil {
 			i.IContainer.mutex.RUnlock()
-			return nil, false    
+			return nil, false
 		}
-		
+
 		// If the definition needs to be lazily evaluated,
 		// then we must release the read-lock and proceed with more
 		// specific locking
@@ -271,7 +271,7 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 			return check, true
 		}
 		i.mutex.RUnlock()
-		
+
 		// run factory unlocked to prevent issues with
 		// double locking in the readOnlyInjections
 		val := v.fn(i.w, i.r, readOnlyInjections{i})
@@ -289,34 +289,34 @@ func (i *IClone) TryGet(key string) (interface{}, bool) {
 				i.IContainer.mutex.Unlock()
 				return val, true
 			}
-            
-            // Life time is per-request. Release the unnecessary
-            // master container write-lock and acquire the thread
-            // specific write-lock
-            i.IContainer.mutex.Unlock()
-            i.mutex.Lock()
 
-            if check, ok := i.threadData[key]; ok {
-                // If the function has been evaluated since we last checked
-                // and acquired the thread specific write-lock, then just release
-                // the write-lock and return the value
-                i.mutex.Unlock()
-                return check, true
-            }
-            
-            // Condition still holds after acquiring thread specific write-lock,
-            // evaluate the function, set the value in thread specific data,
-            // release the thread specific write-lock and return the value
-            i.threadData[key] = val
-            i.mutex.Unlock()
-            return val, true
-		} 
-        
-        // Object has been evaluated since we released the read-lock and
-        // acquired the write-lock. Release the write-lock and return the
-        // evaluated value
-        i.IContainer.mutex.Unlock()
-        return v.obj, true
+			// Life time is per-request. Release the unnecessary
+			// master container write-lock and acquire the thread
+			// specific write-lock
+			i.IContainer.mutex.Unlock()
+			i.mutex.Lock()
+
+			if check, ok := i.threadData[key]; ok {
+				// If the function has been evaluated since we last checked
+				// and acquired the thread specific write-lock, then just release
+				// the write-lock and return the value
+				i.mutex.Unlock()
+				return check, true
+			}
+
+			// Condition still holds after acquiring thread specific write-lock,
+			// evaluate the function, set the value in thread specific data,
+			// release the thread specific write-lock and return the value
+			i.threadData[key] = val
+			i.mutex.Unlock()
+			return val, true
+		}
+
+		// Object has been evaluated since we released the read-lock and
+		// acquired the write-lock. Release the write-lock and return the
+		// evaluated value
+		i.IContainer.mutex.Unlock()
+		return v.obj, true
 	}
 
 	// Value exists, release read-lock and return value
