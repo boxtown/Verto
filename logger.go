@@ -60,7 +60,7 @@ type DefaultLogger struct {
 	errors      map[string][]error
 	files       []*os.File
 	closed      bool
-	mut         *sync.Mutex
+	mut         *sync.RWMutex
 
 	// DropTimeout is the duration before a message is dropped
 	// when attempting to pipe messages to a subscriber
@@ -75,7 +75,7 @@ func NewLogger() *DefaultLogger {
 		errors:      make(map[string][]error),
 		files:       make([]*os.File, 0),
 		closed:      false,
-		mut:         &sync.Mutex{},
+		mut:         &sync.RWMutex{},
 
 		DropTimeout: time.Duration(250 * time.Millisecond),
 	}
@@ -142,6 +142,10 @@ func (dl *DefaultLogger) Errors() map[string][]error {
 // Close attempts to close all opened files attached to VertoLogger.
 // Any errors encountered while closing files are captured in the errors map
 func (dl *DefaultLogger) Close() {
+	if dl.closed {
+		return
+	}
+
 	dl.mut.Lock()
 	if dl.closed {
 		dl.mut.Unlock()
@@ -271,6 +275,9 @@ func (dl *DefaultLogger) lprint(prefix string, v ...interface{}) {
 
 	msg := buf.String()
 
+	dl.mut.RLock()
+	defer dl.mut.RUnlock()
+
 	dl.pushToSubs(msg)
 	dl.writeToFiles(msg)
 }
@@ -288,6 +295,9 @@ func (dl *DefaultLogger) lprintf(prefix, format string, v ...interface{}) {
 	buf.WriteString("\n")
 
 	msg := buf.String()
+
+	dl.mut.RLock()
+	defer dl.mut.RUnlock()
 
 	dl.pushToSubs(msg)
 	dl.writeToFiles(msg)
@@ -307,7 +317,6 @@ func (dl *DefaultLogger) pushToSubs(msg string) {
 	for k, s := range dl.subscribers {
 		select {
 		case s <- msg:
-			break
 		case <-time.After(dl.DropTimeout):
 			dl.dropped[k] = append(dl.dropped[k], msg)
 		}
@@ -317,9 +326,7 @@ func (dl *DefaultLogger) pushToSubs(msg string) {
 // Writes a string message to all open log files.
 func (dl *DefaultLogger) writeToFiles(msg string) {
 	for _, f := range dl.files {
-		dl.mut.Lock()
 		_, err := f.WriteString(msg)
-		dl.mut.Unlock()
 
 		if err != nil {
 			dl.errors[f.Name()] = append(dl.errors[f.Name()], err)

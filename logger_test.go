@@ -20,15 +20,18 @@ func TestLoggerPrinting(t *testing.T) {
 	defer l.Close()
 
 	msg := "test"
-
 	for i := 0; i < 10; i++ {
 		key := strconv.FormatInt(int64(i), 10)
-		l.subscribers[key] = make(chan string)
-		go func() {
+		c := make(chan string)
+		l.subscribers[key] = c
+		go func(sub <-chan string) {
 			for {
-				<-l.subscribers[key]
+				_, ok := <-sub
+				if !ok {
+					return
+				}
 			}
-		}()
+		}(c)
 	}
 
 	for i := 0; i < 10; i++ {
